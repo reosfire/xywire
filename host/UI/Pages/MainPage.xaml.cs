@@ -1,13 +1,23 @@
-﻿using UI.Models;
-using UI.PageModels;
-
-namespace UI.Pages;
+﻿namespace UI.Pages;
 
 public partial class MainPage : ContentPage
 {
-    public MainPage(MainPageModel model)
+    private int _count = 0;
+
+    public MainPage()
     {
         InitializeComponent();
-        BindingContext = model;
+    }
+
+    private void OnCounterClicked(object sender, EventArgs e)
+    {
+        _count++;
+
+        if (_count == 1)
+            CounterLabel.Text = $"Clicked {_count} time";
+        else
+            CounterLabel.Text = $"Clicked {_count} times";
+
+        SemanticScreenReader.Announce(CounterLabel.Text);
     }
 }
