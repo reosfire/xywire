@@ -37,11 +37,11 @@ public partial class EffectControlPage : ContentPage
         {
             _effectService.StartEffect(effectInfo);
             StatusLabel.Text = $"Running: {effectInfo.Name}";
-            await DisplayAlert("Success", $"Started effect: {effectInfo.Name}", "OK");
+            await DisplayAlertAsync("Success", $"Started effect: {effectInfo.Name}", "OK");
         }
         catch (Exception ex)
         {
-            await DisplayAlert("Error", $"Failed to start effect: {ex.Message}", "OK");
+            await DisplayAlertAsync("Error", $"Failed to start effect: {ex.Message}", "OK");
         }
     }
 

@@ -1,11 +1,12 @@
-<?xml version="1.0" encoding="utf-8" ?>
+<?xml version="1.0" encoding="utf-8"?>
+
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              x:Class="UI.Pages.EffectControlPage"
              Title="Effect Control">
 
     <Grid RowDefinitions="Auto,Auto,*,Auto" Padding="20">
-        
+
         <VerticalStackLayout Grid.Row="0" Spacing="10" Margin="0,0,0,20">
             <Label
                 Text="LED Effect Control"
@@ -18,11 +19,12 @@
                 TextColor="Gray" />
         </VerticalStackLayout>
 
-        <Frame Grid.Row="1" 
-               Padding="15" 
-               BorderColor="LightGray"
-               CornerRadius="8"
-               Margin="0,0,0,20">
+        <Border Grid.Row="1"
+                Padding="15"
+                Stroke="LightGray"
+                StrokeThickness="1"
+                StrokeShape="RoundRectangle 8"
+                Margin="0,0,0,20">
             <VerticalStackLayout Spacing="10">
                 <Label
                     Text="Brightness"
@@ -46,7 +48,7 @@
                         WidthRequest="40" />
                 </Grid>
             </VerticalStackLayout>
-        </Frame>
+        </Border>
 
         <ScrollView Grid.Row="2">
             <VerticalStackLayout Spacing="10">
@@ -55,22 +57,24 @@
                     FontSize="18"
                     FontAttributes="Bold"
                     Margin="0,0,0,10" />
-                
+
                 <CollectionView
                     x:Name="EffectsCollectionView"
                     SelectionMode="None">
                     <CollectionView.ItemTemplate>
                         <DataTemplate>
-                            <Frame Margin="0,5" 
-                                   Padding="15"
-                                   BorderColor="LightGray"
-                                   CornerRadius="8">
-                                <Frame.GestureRecognizers>
+                            <Border Margin="0,5"
+                                    Padding="15"
+                                    Stroke="LightGray"
+                                    StrokeThickness="1"
+                                    BackgroundColor="{AppThemeBinding Light=White, Dark=#1E1E1E}"
+                                    StrokeShape="RoundRectangle 8">
+                                <Border.GestureRecognizers>
                                     <TapGestureRecognizer Tapped="OnEffectSelected" />
-                                </Frame.GestureRecognizers>
-                                <Label Text="{Binding Name}" 
+                                </Border.GestureRecognizers>
+                                <Label Text="{Binding Name}"
                                        FontSize="16" />
-                            </Frame>
+                            </Border>
                         </DataTemplate>
                     </CollectionView.ItemTemplate>
                 </CollectionView>

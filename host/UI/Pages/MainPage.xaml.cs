@@ -47,7 +47,7 @@ public partial class MainPage : ContentPage
         }
         else
         {
-            await DisplayAlert("Not Connected", "Please connect to a device first.", "OK");
+            await DisplayAlertAsync("Not Connected", "Please connect to a device first.", "OK");
         }
     }
 

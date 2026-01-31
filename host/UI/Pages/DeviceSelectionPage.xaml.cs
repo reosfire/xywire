@@ -36,16 +36,15 @@ public partial class DeviceSelectionPage : ContentPage
 
         try
         {
-            var connectButton = new Button { Text = "Connecting..." };
-            await DisplayAlert("Connecting", $"Connecting to {deviceAddress}...", "Cancel");
+            await DisplayAlertAsync("Connecting", $"Connecting to {deviceAddress}...", "Cancel");
             
             _effectService.ConnectToDevice(deviceAddress, 100);
-            await DisplayAlert("Success", $"Connected to {deviceAddress}", "OK");
+            await DisplayAlertAsync("Success", $"Connected to {deviceAddress}", "OK");
             await Navigation.PopAsync();
         }
         catch (Exception ex)
         {
-            await DisplayAlert("Error", $"Failed to connect: {ex.Message}", "OK");
+            await DisplayAlertAsync("Error", $"Failed to connect: {ex.Message}", "OK");
         }
     }
 
@@ -55,7 +54,7 @@ public partial class DeviceSelectionPage : ContentPage
         
         if (string.IsNullOrWhiteSpace(address))
         {
-            await DisplayAlert("Invalid Input", "Please enter a device address.", "OK");
+            await DisplayAlertAsync("Invalid Input", "Please enter a device address.", "OK");
             return;
         }
 
@@ -64,11 +63,11 @@ public partial class DeviceSelectionPage : ContentPage
             _deviceService.AddDevice(address);
             DeviceAddressEntry.Text = string.Empty;
             LoadDevices();
-            await DisplayAlert("Success", $"Device {address} added successfully.", "OK");
+            await DisplayAlertAsync("Success", $"Device {address} added successfully.", "OK");
         }
         catch (Exception ex)
         {
-            await DisplayAlert("Error", $"Failed to add device: {ex.Message}", "OK");
+            await DisplayAlertAsync("Error", $"Failed to add device: {ex.Message}", "OK");
         }
     }
 
@@ -78,7 +77,7 @@ public partial class DeviceSelectionPage : ContentPage
         var deviceAddress = swipeItem.BindingContext as string;
         if (string.IsNullOrEmpty(deviceAddress)) return;
 
-        var result = await DisplayAlert("Confirm Delete", 
+        var result = await DisplayAlertAsync("Confirm Delete", 
             $"Are you sure you want to delete {deviceAddress}?", 
             "Yes", "No");
 

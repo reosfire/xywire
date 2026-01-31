@@ -4,10 +4,10 @@ namespace UI.Pages;
 
 public partial class WiFiSetupPage : ContentPage
 {
-    private readonly Leds.services.BluetoothService _bluetoothService;
-    private List<BluetoothDeviceDto> _discoveredDevices = new();
+    private readonly BluetoothService _bluetoothService;
+    private List<BluetoothDeviceDto> _discoveredDevices = [];
 
-    public WiFiSetupPage(Leds.services.BluetoothService bluetoothService)
+    public WiFiSetupPage(BluetoothService bluetoothService)
     {
         InitializeComponent();
         _bluetoothService = bluetoothService;
@@ -36,7 +36,7 @@ public partial class WiFiSetupPage : ContentPage
         }
         catch (Exception ex)
         {
-            await DisplayAlert("Error", $"Failed to scan for devices: {ex.Message}", "OK");
+            await DisplayAlertAsync("Error", $"Failed to scan for devices: {ex.Message}", "OK");
             ScanStatusLabel.Text = "Scan failed";
         }
         finally
@@ -50,8 +50,7 @@ public partial class WiFiSetupPage : ContentPage
     private async void OnBluetoothDeviceSelected(object sender, EventArgs e)
     {
         if (sender is not BindableObject bindable) return;
-        var device = bindable.BindingContext as BluetoothDeviceDto;
-        if (device == null) return;
+        if (bindable.BindingContext is not BluetoothDeviceDto device) return;
 
         var ssid = await DisplayPromptAsync("WiFi SSID", "Enter the WiFi network name (SSID):");
         if (string.IsNullOrWhiteSpace(ssid)) return;
@@ -61,13 +60,13 @@ public partial class WiFiSetupPage : ContentPage
 
         try
         {
-            await DisplayAlert("Sending", "Sending WiFi credentials...", "OK");
+            await DisplayAlertAsync("Sending", "Sending WiFi credentials...", "OK");
             await _bluetoothService.SendWiFiCredentialsAsync(device, ssid, password);
-            await DisplayAlert("Success", "WiFi credentials sent successfully!", "OK");
+            await DisplayAlertAsync("Success", "WiFi credentials sent successfully!", "OK");
         }
         catch (Exception ex)
         {
-            await DisplayAlert("Error", $"Failed to send credentials: {ex.Message}", "OK");
+            await DisplayAlertAsync("Error", $"Failed to send credentials: {ex.Message}", "OK");
         }
     }
 }
