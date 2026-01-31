@@ -2,9 +2,9 @@
 
 public partial class App : Application
 {
-    public App()
+    public App(Pages.MainPage mainPage)
     {
         InitializeComponent();
-        MainPage = new Pages.MainPage();
+        MainPage = new NavigationPage(mainPage);
     }
 }

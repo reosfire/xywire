@@ -1,23 +1,59 @@
-﻿namespace UI.Pages;
+﻿using Leds.services;
+
+namespace UI.Pages;
 
 public partial class MainPage : ContentPage
 {
-    private int _count = 0;
+    private readonly EffectService _effectService;
+    private readonly IServiceProvider _serviceProvider;
 
-    public MainPage()
+    public MainPage(
+        EffectService effectService,
+        IServiceProvider serviceProvider)
     {
         InitializeComponent();
+        _effectService = effectService;
+        _serviceProvider = serviceProvider;
+        
+        BindingContext = this;
     }
 
-    private void OnCounterClicked(object sender, EventArgs e)
+    public bool IsConnected => _effectService.IsConnected;
+
+    protected override void OnAppearing()
     {
-        _count++;
+        base.OnAppearing();
+        UpdateStatus();
+    }
 
-        if (_count == 1)
-            CounterLabel.Text = $"Clicked {_count} time";
+    private async void OnConnectDeviceClicked(object sender, EventArgs e)
+    {
+        var page = _serviceProvider.GetRequiredService<DeviceSelectionPage>();
+        await Navigation.PushAsync(page);
+    }
+
+    private async void OnWiFiSetupClicked(object sender, EventArgs e)
+    {
+        var page = _serviceProvider.GetRequiredService<WiFiSetupPage>();
+        await Navigation.PushAsync(page);
+    }
+
+    private async void OnEffectControlClicked(object sender, EventArgs e)
+    {
+        if (_effectService.IsConnected)
+        {
+            var page = _serviceProvider.GetRequiredService<EffectControlPage>();
+            await Navigation.PushAsync(page);
+        }
         else
-            CounterLabel.Text = $"Clicked {_count} times";
+        {
+            await DisplayAlert("Not Connected", "Please connect to a device first.", "OK");
+        }
+    }
 
-        SemanticScreenReader.Announce(CounterLabel.Text);
+    private void UpdateStatus()
+    {
+        StatusLabel.Text = _effectService.IsConnected ? "Connected to device" : "Not connected";
+        OnPropertyChanged(nameof(IsConnected));
     }
 }

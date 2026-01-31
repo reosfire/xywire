@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="UI.Pages.DeviceSelectionPage"
+             Title="Select Device">
+
+    <Grid RowDefinitions="Auto,*,Auto" Padding="20">
+        
+        <VerticalStackLayout Grid.Row="0" Spacing="10" Margin="0,0,0,20">
+            <Label
+                Text="Saved Devices"
+                FontSize="24"
+                FontAttributes="Bold" />
+            <Label
+                Text="Select a device or add a new one"
+                FontSize="14"
+                TextColor="Gray" />
+        </VerticalStackLayout>
+
+        <CollectionView Grid.Row="1" 
+                        x:Name="DevicesCollectionView"
+                        SelectionMode="None">
+            <CollectionView.ItemTemplate>
+                <DataTemplate>
+                    <SwipeView>
+                        <SwipeView.RightItems>
+                            <SwipeItems>
+                                <SwipeItem Text="Delete"
+                                          BackgroundColor="Red"
+                                          Clicked="OnDeleteDevice" />
+                            </SwipeItems>
+                        </SwipeView.RightItems>
+                        <Frame Margin="0,5" 
+                               Padding="15"
+                               BorderColor="LightGray"
+                               CornerRadius="8">
+                            <Frame.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnDeviceSelected" />
+                            </Frame.GestureRecognizers>
+                            <Label Text="{Binding}" 
+                                   FontSize="16" />
+                        </Frame>
+                    </SwipeView>
+                </DataTemplate>
+            </CollectionView.ItemTemplate>
+        </CollectionView>
+
+        <VerticalStackLayout Grid.Row="2" Spacing="15" Margin="0,20,0,0">
+            <Label
+                Text="Add New Device"
+                FontSize="18"
+                FontAttributes="Bold" />
+            <Entry
+                x:Name="DeviceAddressEntry"
+                Placeholder="Enter device IP or hostname"
+                Keyboard="Default" />
+            <Button
+                Text="Add Device"
+                Clicked="OnAddDeviceClicked"
+                HorizontalOptions="Fill" />
+        </VerticalStackLayout>
+
+    </Grid>
+
+</ContentPage>

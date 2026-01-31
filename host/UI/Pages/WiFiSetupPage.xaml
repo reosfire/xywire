@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="UI.Pages.WiFiSetupPage"
+             Title="WiFi Setup">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="20" Spacing="20">
+            
+            <Label
+                Text="WiFi Setup via Bluetooth"
+                FontSize="24"
+                FontAttributes="Bold" />
+
+            <Label
+                Text="Configure WiFi credentials on your LED device via Bluetooth"
+                FontSize="14"
+                TextColor="Gray" />
+
+            <Button
+                x:Name="ScanButton"
+                Text="Scan for Bluetooth Devices"
+                Clicked="OnScanClicked"
+                HorizontalOptions="Fill"
+                Margin="0,10,0,0" />
+
+            <ActivityIndicator
+                x:Name="ScanningIndicator"
+                IsRunning="False"
+                IsVisible="False"
+                Color="{StaticResource Primary}"
+                HorizontalOptions="Center" />
+
+            <Label
+                x:Name="ScanStatusLabel"
+                Text=""
+                FontSize="14"
+                HorizontalOptions="Center"
+                TextColor="Gray" />
+
+            <CollectionView
+                x:Name="BluetoothDevicesCollectionView"
+                SelectionMode="None"
+                Margin="0,10,0,0">
+                <CollectionView.ItemTemplate>
+                    <DataTemplate>
+                        <Frame Margin="0,5" 
+                               Padding="15"
+                               BorderColor="LightGray"
+                               CornerRadius="8">
+                            <Frame.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnBluetoothDeviceSelected" />
+                            </Frame.GestureRecognizers>
+                            <VerticalStackLayout>
+                                <Label Text="{Binding DeviceName}" 
+                                       FontSize="16"
+                                       FontAttributes="Bold" />
+                                <Label Text="{Binding DeviceAddress}" 
+                                       FontSize="12"
+                                       TextColor="Gray" />
+                            </VerticalStackLayout>
+                        </Frame>
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
+
+        </VerticalStackLayout>
+    </ScrollView>
+
+</ContentPage>

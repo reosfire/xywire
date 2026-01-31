@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
         <TargetFrameworks>net10.0-android;net10.0-ios;net10.0-maccatalyst</TargetFrameworks>
@@ -58,7 +58,11 @@
     <ItemGroup>
         <PackageReference Include="Microsoft.Maui.Controls" Version="$(MauiVersion)"/>
         <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.0"/>
+        <PackageReference Include="InTheHand.Net.Bluetooth" Version="4.2.2"/>
     </ItemGroup>
 
+    <ItemGroup>
+        <ProjectReference Include="..\DesktopApp\DesktopApp.csproj" />
+    </ItemGroup>
 
 </Project>

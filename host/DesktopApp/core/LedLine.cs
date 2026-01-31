@@ -112,7 +112,7 @@ namespace Leds.core
             while (true)
             {
                 _udpClient.Send(packet);
-                var receiveResult = _udpClient.ReceiveAsync().Wait(100);
+                var receiveResult = _udpClient.ReceiveAsync().Wait(1000);
                 if (receiveResult) break;
             }
         }
@@ -134,7 +134,7 @@ namespace Leds.core
             while (true)
             {
                 _udpClient.Send(packet);
-                var receiveResult = _udpClient.ReceiveAsync().Wait(100);
+                var receiveResult = _udpClient.ReceiveAsync().Wait(1000);
                 if (receiveResult) break;
             }
         }
