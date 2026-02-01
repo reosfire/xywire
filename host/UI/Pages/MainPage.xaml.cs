@@ -29,6 +29,14 @@ public partial class MainPage : ContentPage
     private async void OnConnectDeviceClicked(object sender, EventArgs e)
     {
         DeviceSelectionPage page = _serviceProvider.GetRequiredService<DeviceSelectionPage>();
+        page.SuccessfulConnectionEvent += async connected =>
+        {
+            if (connected)
+            {
+                EffectControlPage effectControlPage = _serviceProvider.GetRequiredService<EffectControlPage>();
+                await Navigation.PushAsync(effectControlPage);
+            }
+        };
         await Navigation.PushAsync(page);
     }
 

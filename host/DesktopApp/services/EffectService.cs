@@ -49,6 +49,7 @@ public class EffectService
     {
         await DisconnectFromDevice();
         _ledLine = new LedLine(ipAddress);
+        await _ledLine.SendClearPacket();
     }
 
     public async Task DisconnectFromDevice()

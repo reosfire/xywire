@@ -6,6 +6,30 @@
              Title="Select Device">
 
     <Grid RowDefinitions="Auto,*,Auto" Padding="20">
+        
+        <!-- Loading Overlay -->
+        <Grid x:Name="LoadingOverlay"
+              Grid.RowSpan="3"
+              BackgroundColor="#80000000"
+              IsVisible="False"
+              InputTransparent="False">
+            <VerticalStackLayout
+                HorizontalOptions="Center"
+                VerticalOptions="Center"
+                Spacing="20">
+                <ActivityIndicator
+                    IsRunning="True"
+                    Color="White"
+                    HeightRequest="50"
+                    WidthRequest="50" />
+                <Label
+                    x:Name="LoadingMessage"
+                    Text="Connecting..."
+                    TextColor="White"
+                    FontSize="18"
+                    HorizontalOptions="Center" />
+            </VerticalStackLayout>
+        </Grid>
 
         <VerticalStackLayout Grid.Row="0" Spacing="10" Margin="0,0,0,20">
             <Label

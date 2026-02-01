@@ -7,13 +7,14 @@ public partial class DeviceSelectionPage : ContentPage
     private readonly DeviceService _deviceService;
     private readonly EffectService _effectService;
     private List<string> _devices;
+    public event Action<bool>? SuccessfulConnectionEvent; 
 
-    public DeviceSelectionPage(DeviceService deviceService, EffectService effectService)
+    public DeviceSelectionPage(DeviceService deviceService, EffectService effectService, IServiceProvider serviceProvider)
     {
         InitializeComponent();
         _deviceService = deviceService;
         _effectService = effectService;
-        _devices = new List<string>();
+        _devices = [];
     }
 
     protected override void OnAppearing()
@@ -36,14 +37,20 @@ public partial class DeviceSelectionPage : ContentPage
 
         try
         {
-            await DisplayAlertAsync("Connecting", $"Connecting to {deviceAddress}...", "Cancel");
-
-            _effectService.ConnectToDevice(deviceAddress);
-            await DisplayAlertAsync("Success", $"Connected to {deviceAddress}", "OK");
+            LoadingMessage.Text = $"Connecting to {deviceAddress}...";
+            LoadingOverlay.IsVisible = true;
+            
+            await Task.Run(() => _effectService.ConnectToDevice(deviceAddress));
+            
+            LoadingOverlay.IsVisible = false;
+            
             await Navigation.PopAsync();
+            SuccessfulConnectionEvent?.Invoke(true);
         }
         catch (Exception ex)
         {
+            // Hide loading overlay on error
+            LoadingOverlay.IsVisible = false;
             await DisplayAlertAsync("Error", $"Failed to connect: {ex.Message}", "OK");
         }
     }
