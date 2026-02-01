@@ -4,15 +4,12 @@ namespace Leds.services;
 
 public class DeviceService
 {
-    private readonly string _deviceStorePath;
+    private static readonly JsonSerializerOptions SerializerOptions = new() { WriteIndented = true };
 
-    public DeviceService()
-    {
-        _deviceStorePath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "XywireHost",
-            "devices.json");
-    }
+    private readonly string _deviceStorePath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "XywireHost",
+        "devices.json");
 
     public List<string> LoadSavedDevices()
     {
@@ -23,8 +20,8 @@ public class DeviceService
                 return [];
             }
 
-            var json = File.ReadAllText(_deviceStorePath);
-            var devices = JsonSerializer.Deserialize<List<string>>(json);
+            string json = File.ReadAllText(_deviceStorePath);
+            List<string>? devices = JsonSerializer.Deserialize<List<string>>(json);
             return devices ?? [];
         }
         catch
@@ -33,17 +30,17 @@ public class DeviceService
         }
     }
 
-    public void SaveDevices(List<string> devices)
+    private void SaveDevices(List<string> devices)
     {
         try
         {
-            var folder = Path.GetDirectoryName(_deviceStorePath);
+            string? folder = Path.GetDirectoryName(_deviceStorePath);
             if (!string.IsNullOrEmpty(folder))
             {
                 Directory.CreateDirectory(folder);
             }
 
-            var json = JsonSerializer.Serialize(devices, new JsonSerializerOptions { WriteIndented = true });
+            string json = JsonSerializer.Serialize(devices, SerializerOptions);
             File.WriteAllText(_deviceStorePath, json);
         }
         catch
@@ -54,17 +51,16 @@ public class DeviceService
 
     public void AddDevice(string deviceAddress)
     {
-        var devices = LoadSavedDevices();
-        if (!devices.Contains(deviceAddress))
-        {
-            devices.Add(deviceAddress);
-            SaveDevices(devices);
-        }
+        List<string> devices = LoadSavedDevices();
+        if (devices.Contains(deviceAddress)) return;
+
+        devices.Add(deviceAddress);
+        SaveDevices(devices);
     }
 
     public void RemoveDevice(string deviceAddress)
     {
-        var devices = LoadSavedDevices();
+        List<string> devices = LoadSavedDevices();
         devices.Remove(deviceAddress);
         SaveDevices(devices);
     }

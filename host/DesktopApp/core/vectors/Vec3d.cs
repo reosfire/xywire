@@ -18,7 +18,7 @@ public readonly struct Vec3d
 
     public double Dot(Vec3d other) => X * other.X + Y * other.Y + Z * other.Z;
 
-    public Vec3d Cross(Vec3d other) => new Vec3d(
+    public Vec3d Cross(Vec3d other) => new(
         Y * other.Z - Z * other.Y,
         Z * other.X - X * other.Z,
         X * other.Y - Y * other.X

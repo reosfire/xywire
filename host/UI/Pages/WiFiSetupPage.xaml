@@ -1,4 +1,5 @@
-<?xml version="1.0" encoding="utf-8" ?>
+<?xml version="1.0" encoding="utf-8"?>
+
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              x:Class="UI.Pages.WiFiSetupPage"
@@ -6,7 +7,7 @@
 
     <ScrollView>
         <VerticalStackLayout Padding="20" Spacing="20">
-            
+
             <Label
                 Text="WiFi Setup via Bluetooth"
                 FontSize="24"
@@ -44,22 +45,26 @@
                 Margin="0,10,0,0">
                 <CollectionView.ItemTemplate>
                     <DataTemplate>
-                        <Frame Margin="0,5" 
-                               Padding="15"
-                               BorderColor="LightGray"
-                               CornerRadius="8">
-                            <Frame.GestureRecognizers>
+                        <Border Margin="0,5"
+                                Padding="15"
+                                Stroke="LightGray"
+                                StrokeThickness="1"
+                                BackgroundColor="White">
+                            <Border.StrokeShape>
+                                <RoundRectangle CornerRadius="8" />
+                            </Border.StrokeShape>
+                            <Border.GestureRecognizers>
                                 <TapGestureRecognizer Tapped="OnBluetoothDeviceSelected" />
-                            </Frame.GestureRecognizers>
+                            </Border.GestureRecognizers>
                             <VerticalStackLayout>
-                                <Label Text="{Binding DeviceName}" 
+                                <Label Text="{Binding DeviceName}"
                                        FontSize="16"
                                        FontAttributes="Bold" />
-                                <Label Text="{Binding DeviceAddress}" 
+                                <Label Text="{Binding DeviceAddress}"
                                        FontSize="12"
                                        TextColor="Gray" />
                             </VerticalStackLayout>
-                        </Frame>
+                        </Border>
                     </DataTemplate>
                 </CollectionView.ItemTemplate>
             </CollectionView>

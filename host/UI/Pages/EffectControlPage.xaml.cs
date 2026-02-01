@@ -11,7 +11,7 @@ public partial class EffectControlPage : ContentPage
     {
         InitializeComponent();
         _effectService = effectService;
-        _availableEffects = new List<EffectInfo>();
+        _availableEffects = [];
     }
 
     protected override void OnAppearing()
@@ -23,15 +23,14 @@ public partial class EffectControlPage : ContentPage
 
     private void LoadEffects()
     {
-        _availableEffects = _effectService.GetAvailableEffects();
+        _availableEffects = EffectService.GetAvailableEffects();
         EffectsCollectionView.ItemsSource = _availableEffects;
     }
 
     private async void OnEffectSelected(object sender, EventArgs e)
     {
         if (sender is not BindableObject bindable) return;
-        var effectInfo = bindable.BindingContext as EffectInfo;
-        if (effectInfo == null) return;
+        if (bindable.BindingContext is not EffectInfo effectInfo) return;
 
         try
         {
@@ -53,15 +52,15 @@ public partial class EffectControlPage : ContentPage
 
     private void OnBrightnessChanged(object sender, ValueChangedEventArgs e)
     {
-        var brightness = (int)e.NewValue;
+        int brightness = (int)e.NewValue;
         BrightnessLabel.Text = brightness.ToString();
         _effectService.SetBrightness(brightness);
     }
 
     private void UpdateStatus()
     {
-        StatusLabel.Text = _effectService.IsEffectRunning 
-            ? "Effect is running" 
+        StatusLabel.Text = _effectService.IsEffectRunning
+            ? "Effect is running"
             : "No effect running";
     }
 }

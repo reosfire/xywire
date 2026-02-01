@@ -1,31 +1,24 @@
 ﻿using Leds.core;
 
-namespace Leds.effects._2d
+namespace Leds.effects._2d;
+
+internal class Rainbow(LedLine attachedLedLine) : AbstractEffect(attachedLedLine)
 {
-    internal class Rainbow : AbstractEffect
+    private readonly Color[][] _colorsBuffer =
+        Array2D.CreateJagged<Color>(attachedLedLine.Height, attachedLedLine.Width);
+
+    private int _counter = 0;
+
+    protected override void MoveNext()
     {
-        private readonly Color[][] _colorsBuffer;
-
-        private int _counter = 0;
-
-        public Rainbow(LedLine attachedLedLine) : base(attachedLedLine)
+        _colorsBuffer.ShiftDown();
+        for (int i = 0; i < LedLine.Width; i++)
         {
-            _colorsBuffer = Array2D.CreateJagged<Color>(attachedLedLine.Height, attachedLedLine.Width);
+            _colorsBuffer[0][i] = Color.HSV(_counter++ % 360, 1, 1);
         }
 
-        protected override void MoveNext()
-        {
-            _colorsBuffer.Shift();
-            for (int i = 0; i < LedLine.Width; i++)
-            {
-                _colorsBuffer[0][i] = Color.HSV(_counter++ % 360, 1, 1);
-            }
-            LedLine.SetColors(_colorsBuffer);
-        }
-
-        protected override int StabilizeFps()
-        {
-            return 60;
-        }
+        LedLine.SetColors(_colorsBuffer);
     }
+
+    protected override int StabilizeFps() => 60;
 }

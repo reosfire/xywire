@@ -31,14 +31,14 @@ public partial class DeviceSelectionPage : ContentPage
     private async void OnDeviceSelected(object sender, EventArgs e)
     {
         if (sender is not BindableObject bindable) return;
-        var deviceAddress = bindable.BindingContext as string;
+        string? deviceAddress = bindable.BindingContext as string;
         if (string.IsNullOrEmpty(deviceAddress)) return;
 
         try
         {
             await DisplayAlertAsync("Connecting", $"Connecting to {deviceAddress}...", "Cancel");
-            
-            _effectService.ConnectToDevice(deviceAddress, 100);
+
+            _effectService.ConnectToDevice(deviceAddress);
             await DisplayAlertAsync("Success", $"Connected to {deviceAddress}", "OK");
             await Navigation.PopAsync();
         }
@@ -50,8 +50,8 @@ public partial class DeviceSelectionPage : ContentPage
 
     private async void OnAddDeviceClicked(object sender, EventArgs e)
     {
-        var address = DeviceAddressEntry.Text?.Trim();
-        
+        string? address = DeviceAddressEntry.Text?.Trim();
+
         if (string.IsNullOrWhiteSpace(address))
         {
             await DisplayAlertAsync("Invalid Input", "Please enter a device address.", "OK");
@@ -74,11 +74,11 @@ public partial class DeviceSelectionPage : ContentPage
     private async void OnDeleteDevice(object sender, EventArgs e)
     {
         if (sender is not SwipeItem swipeItem) return;
-        var deviceAddress = swipeItem.BindingContext as string;
+        string? deviceAddress = swipeItem.BindingContext as string;
         if (string.IsNullOrEmpty(deviceAddress)) return;
 
-        var result = await DisplayAlertAsync("Confirm Delete", 
-            $"Are you sure you want to delete {deviceAddress}?", 
+        bool result = await DisplayAlertAsync("Confirm Delete",
+            $"Are you sure you want to delete {deviceAddress}?",
             "Yes", "No");
 
         if (result)

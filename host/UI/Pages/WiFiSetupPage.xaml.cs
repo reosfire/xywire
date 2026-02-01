@@ -23,7 +23,7 @@ public partial class WiFiSetupPage : ContentPage
         try
         {
             _discoveredDevices = await _bluetoothService.DiscoverDevicesAsync();
-            
+
             if (_discoveredDevices.Count == 0)
             {
                 ScanStatusLabel.Text = "No Bluetooth devices found";
@@ -52,10 +52,11 @@ public partial class WiFiSetupPage : ContentPage
         if (sender is not BindableObject bindable) return;
         if (bindable.BindingContext is not BluetoothDeviceDto device) return;
 
-        var ssid = await DisplayPromptAsync("WiFi SSID", "Enter the WiFi network name (SSID):");
+        string? ssid = await DisplayPromptAsync("WiFi SSID", "Enter the WiFi network name (SSID):");
         if (string.IsNullOrWhiteSpace(ssid)) return;
 
-        var password = await DisplayPromptAsync("WiFi Password", "Enter the WiFi password:", keyboard: Keyboard.Default);
+        string? password =
+            await DisplayPromptAsync("WiFi Password", "Enter the WiFi password:", keyboard: Keyboard.Default);
         if (password == null) return;
 
         try

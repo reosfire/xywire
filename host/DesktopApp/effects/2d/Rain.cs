@@ -1,36 +1,30 @@
 ﻿using Leds.core;
 
-namespace Leds.effects._2d
+namespace Leds.effects._2d;
+
+internal class Rain(LedLine attachedLedLine) : AbstractEffect(attachedLedLine)
 {
-    internal class Rain : AbstractEffect
+    private readonly Color[][] _colorsBuffer =
+        Array2D.CreateJagged<Color>(attachedLedLine.Height, attachedLedLine.Width);
+
+    private int _framesCount = 0;
+
+    protected override void MoveNext()
     {
-        private Color[][] _colorsBuffer;
-
-        public Rain(LedLine attachedLedLine) : base(attachedLedLine)
+        if (_framesCount++ % 5 == 0)
         {
-            _colorsBuffer = Array2D.CreateJagged<Color>(attachedLedLine.Height, attachedLedLine.Width);
-        }
+            _colorsBuffer.ShiftDown();
 
-        private int _framesCount = 0;
-
-        protected override void MoveNext()
-        {
-            if (_framesCount++ % 5 == 0) {
-                _colorsBuffer.Shift();
-
-                for (int i = 0; i < LedLine.Width; i++)
-                {
-                    _colorsBuffer[0][i] = _colorsBuffer[1][i].CopyHSV(value: _colorsBuffer[1][i].Value * 0.5);
-                }
-                _colorsBuffer[0][Random.Shared.Next(LedLine.Width)] = Color.HSV(0, 0, 1);
+            for (int i = 0; i < LedLine.Width; i++)
+            {
+                _colorsBuffer[0][i] = _colorsBuffer[1][i].CopyHSV(value: _colorsBuffer[1][i].Value * 0.5);
             }
-            
-            LedLine.SetColors(_colorsBuffer);
+
+            _colorsBuffer[0][Random.Shared.Next(LedLine.Width)] = Color.HSV(0, 0, 1);
         }
 
-        protected override int StabilizeFps()
-        {
-            return 60;
-        }
+        LedLine.SetColors(_colorsBuffer);
     }
+
+    protected override int StabilizeFps() => 60;
 }

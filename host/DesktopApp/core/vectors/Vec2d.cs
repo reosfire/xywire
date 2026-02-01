@@ -26,11 +26,5 @@ public struct Vec2d
         return new Vec2d(X / magnitude, Y / magnitude);
     }
 
-    public Vec2d Lerp(Vec2d other, double amount)
-    {
-        return new Vec2d(
-            X + (other.X - X) * amount,
-            Y + (other.Y - Y) * amount
-        );
-    }
+    public Vec2d Lerp(Vec2d other, double amount) => new(X + (other.X - X) * amount, Y + (other.Y - Y) * amount);
 }

@@ -6,32 +6,30 @@ namespace Leds.effects._2d;
 
 internal class FlashingLettersText : AbstractEffect
 {
-    private readonly Color[][] _colorsBuffer;
-    private Color[][][] _characters;
-    private string _charactersString =
+    private const string CharactersString =
         " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
-    private Dictionary<char, int> _charToIndex = new();
-    
-    private string _text = "Happy New Year!";
-    private int _scrollOffset = 0;
-    private int _totalTextWidth;
-    private double _gradientOffset = 0;
+
+    private const string Text = "Happy New Year!";
+
+    private readonly Color[][] _colorsBuffer;
+    private readonly Color[][][] _characters;
+    private readonly Dictionary<char, int> _charToIndex = new();
+    private readonly int _totalTextWidth = Text.Length * 12;
+
+    private int _frameCounter;
+    private double _gradientOffset;
+    private int _scrollOffset;
 
     public FlashingLettersText(LedLine attachedLedLine) : base(attachedLedLine)
     {
         _colorsBuffer = Array2D.CreateJagged<Color>(attachedLedLine.Height, attachedLedLine.Width);
+        _characters = LoadCharacters();
 
-        LoadCharacters();
-
-        for (int i = 0; i < _charactersString.Length; i++)
+        for (int i = 0; i < CharactersString.Length; i++)
         {
-            _charToIndex[_charactersString[i]] = i;
+            _charToIndex[CharactersString[i]] = i;
         }
-
-        _totalTextWidth = _text.Length * 12;
     }
-    
-    private int _frameCounter = 0;
 
     protected override void MoveNext()
     {
@@ -43,30 +41,29 @@ internal class FlashingLettersText : AbstractEffect
             }
         }
 
-        for (int charIdx = 0; charIdx < _text.Length; charIdx++)
+        for (int charIdx = 0; charIdx < Text.Length; charIdx++)
         {
-            var currentChar = _text[charIdx];
-            var charIndex = _charToIndex.ContainsKey(currentChar) ? _charToIndex[currentChar] : 0;
-            var charBitmap = _characters[charIndex];
-            
+            char currentChar = Text[charIdx];
+            int charIndex = _charToIndex.GetValueOrDefault(currentChar, 0);
+            Color[][] charBitmap = _characters[charIndex];
+
             int charStartX = charIdx * 12 - _scrollOffset;
-            
+
             for (int row = 0; row < 14 && row < LedLine.Height; row++)
             {
                 for (int col = 1; col < 13; col++)
                 {
                     int screenX = charStartX + col;
-                    if (screenX >= 0 && screenX < LedLine.Width)
-                    {
-                        double gradientValue = (screenX + row + _gradientOffset) / (LedLine.Width + LedLine.Height);
-                        gradientValue = (gradientValue % 1.0 + 1.0) % 1.0;
-                        
-                        Color purple = Color.RGB(150, 0, 255);
-                        Color blue = Color.RGB(0, 150, 255);
-                        Color gradientColor = Color.Lerp(purple, blue, gradientValue);
-                        
-                        _colorsBuffer[row][screenX] = charBitmap[row][col] * gradientColor;
-                    }
+                    if (screenX < 0 || screenX >= LedLine.Width) continue;
+
+                    double gradientValue = (screenX + row + _gradientOffset) / (LedLine.Width + LedLine.Height);
+                    gradientValue = (gradientValue % 1.0 + 1.0) % 1.0;
+
+                    Color purple = Color.RGB(150, 0, 255);
+                    Color blue = Color.RGB(0, 150, 255);
+                    Color gradientColor = Color.Lerp(purple, blue, gradientValue);
+
+                    _colorsBuffer[row][screenX] = charBitmap[row][col] * gradientColor;
                 }
             }
         }
@@ -79,40 +76,40 @@ internal class FlashingLettersText : AbstractEffect
                 _scrollOffset = 0;
             }
         }
-        
+
         _gradientOffset += 0.5;
         if (_gradientOffset > LedLine.Width + LedLine.Height)
         {
             _gradientOffset = 0;
         }
-        
+
         _colorsBuffer.MirrorLeftToRight();
 
         LedLine.SetColors(_colorsBuffer);
     }
-    
-    private void LoadCharacters()
+
+    private static Color[][][] LoadCharacters()
     {
-        var bitmapFile = new Bitmap("./font2bitmap.png");
-        _characters = new Color[_charactersString.Length][][];
-        
-        for (int charIndex = 0; charIndex < _charactersString.Length; charIndex++)
+        Bitmap bitmapFile = new("./font2bitmap.png");
+        Color[][][] result = new Color[CharactersString.Length][][];
+
+        for (int charIndex = 0; charIndex < CharactersString.Length; charIndex++)
         {
-            _characters[charIndex] = new Color[14][];
+            result[charIndex] = new Color[14][];
             for (int row = 0; row < 14; row++)
             {
-                _characters[charIndex][row] = new Color[14];
+                result[charIndex][row] = new Color[14];
                 for (int col = 0; col < 14; col++)
                 {
-                    var pixel = bitmapFile.GetPixel(charIndex * 14 + col, row);
-                    _characters[charIndex][row][col] = Color.RGB(pixel.R / 255.0 * pixel.A, pixel.G / 255.0 * pixel.A, pixel.B / 255.0 * pixel.A);
+                    System.Drawing.Color pixel = bitmapFile.GetPixel(charIndex * 14 + col, row);
+                    result[charIndex][row][col] = Color.RGB(pixel.R / 255.0 * pixel.A, pixel.G / 255.0 * pixel.A,
+                        pixel.B / 255.0 * pixel.A);
                 }
             }
         }
+
+        return result;
     }
 
-    protected override int StabilizeFps()
-    {
-        return 60;
-    }
+    protected override int StabilizeFps() => 60;
 }

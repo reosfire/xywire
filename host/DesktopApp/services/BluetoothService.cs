@@ -1,6 +1,5 @@
-using InTheHand.Net.Bluetooth;
-using InTheHand.Net.Sockets;
 using System.Text;
+using InTheHand.Net.Sockets;
 using BtService = InTheHand.Net.Bluetooth.BluetoothService;
 
 namespace Leds.services;
@@ -18,13 +17,11 @@ public class BluetoothService
     {
         return await Task.Run(() =>
         {
-            using var client = new BluetoothClient();
-            var devices = client.DiscoverDevices();
+            using BluetoothClient client = new();
+            IReadOnlyCollection<BluetoothDeviceInfo>? devices = client.DiscoverDevices();
             return devices.Select(d => new BluetoothDeviceDto
             {
-                DeviceName = d.DeviceName,
-                DeviceAddress = d.DeviceAddress.ToString(),
-                InternalDevice = d
+                DeviceName = d.DeviceName, DeviceAddress = d.DeviceAddress.ToString(), InternalDevice = d,
             }).ToList();
         });
     }
@@ -36,13 +33,13 @@ public class BluetoothService
 
         await Task.Run(() =>
         {
-            using var client = new BluetoothClient();
+            using BluetoothClient client = new();
             client.Connect(device.InternalDevice.DeviceAddress, BtService.SerialPort);
 
             using Stream stream = client.GetStream();
 
-            var data = Encoding.ASCII.GetBytes($"{ssid}\0{password}\0");
-            var packet = new byte[data.Length + 1];
+            byte[] data = Encoding.ASCII.GetBytes($"{ssid}\0{password}\0");
+            byte[] packet = new byte[data.Length + 1];
             packet[0] = 4;
             Array.Copy(data, 0, packet, 1, data.Length);
 

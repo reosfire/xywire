@@ -14,7 +14,7 @@ public partial class MainPage : ContentPage
         InitializeComponent();
         _effectService = effectService;
         _serviceProvider = serviceProvider;
-        
+
         BindingContext = this;
     }
 
@@ -28,13 +28,13 @@ public partial class MainPage : ContentPage
 
     private async void OnConnectDeviceClicked(object sender, EventArgs e)
     {
-        var page = _serviceProvider.GetRequiredService<DeviceSelectionPage>();
+        DeviceSelectionPage page = _serviceProvider.GetRequiredService<DeviceSelectionPage>();
         await Navigation.PushAsync(page);
     }
 
     private async void OnWiFiSetupClicked(object sender, EventArgs e)
     {
-        var page = _serviceProvider.GetRequiredService<WiFiSetupPage>();
+        WiFiSetupPage page = _serviceProvider.GetRequiredService<WiFiSetupPage>();
         await Navigation.PushAsync(page);
     }
 
@@ -42,7 +42,7 @@ public partial class MainPage : ContentPage
     {
         if (_effectService.IsConnected)
         {
-            var page = _serviceProvider.GetRequiredService<EffectControlPage>();
+            EffectControlPage page = _serviceProvider.GetRequiredService<EffectControlPage>();
             await Navigation.PushAsync(page);
         }
         else

@@ -62,7 +62,7 @@
     </ItemGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\DesktopApp\DesktopApp.csproj" />
+        <ProjectReference Include="..\DesktopApp\DesktopApp.csproj"/>
     </ItemGroup>
 
 </Project>
