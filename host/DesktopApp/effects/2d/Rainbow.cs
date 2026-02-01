@@ -12,10 +12,15 @@ internal class Rainbow(LedLine attachedLedLine) : AbstractEffect(attachedLedLine
     protected override void MoveNext()
     {
         _colorsBuffer.ShiftDown();
+        
+        double stepHueOffset = 360.0 / LedLine.Width;
+        
         for (int i = 0; i < LedLine.Width; i++)
         {
-            _colorsBuffer[0][i] = Color.HSV(_counter++ % 360, 1, 1);
+            _colorsBuffer[0][i] = Color.HSV((_counter + stepHueOffset * i) % 360, 1, 1);
         }
+
+        _counter++;
 
         LedLine.SetColors(_colorsBuffer);
     }

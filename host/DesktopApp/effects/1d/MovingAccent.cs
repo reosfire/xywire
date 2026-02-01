@@ -2,7 +2,7 @@
 
 namespace Leds.effects;
 
-internal class Tests(LedLine attachedLedLine) : AbstractEffect(attachedLedLine)
+internal class MovingAccent(LedLine attachedLedLine) : AbstractEffect(attachedLedLine)
 {
     private readonly Color[] _colorsBuffer = new Color[attachedLedLine.LedsCount];
 
@@ -31,14 +31,14 @@ internal class Tests(LedLine attachedLedLine) : AbstractEffect(attachedLedLine)
 
         _value += _valueShift;
 
-        for (int i = 0; i < 100; i++)
+        for (int i = 0; i < attachedLedLine.LedsCount; i++)
         {
-            double distanceToAccent = Math.Abs(i / 100.0 - _value);
+            double distanceToAccent = Math.Abs((double)i / attachedLedLine.LedsCount - _value);
             _colorsBuffer[i] = Color.HSV(_hue, _saturation, _value * Math.Pow(1 - distanceToAccent, 6));
         }
 
         LedLine.SetColors(_colorsBuffer);
     }
 
-    protected override int StabilizeFps() => 1000;
+    protected override int StabilizeFps() => 60;
 }
