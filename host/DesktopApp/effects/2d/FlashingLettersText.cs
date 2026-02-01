@@ -16,7 +16,7 @@ internal class FlashingLettersText : AbstractEffect
     private readonly Dictionary<char, int> _charToIndex = new();
     private readonly int _totalTextWidth = Text.Length * 12;
 
-    private int _frameCounter;
+    private int _frameNumber;
     private double _gradientOffset;
     private int _scrollOffset;
 
@@ -68,7 +68,7 @@ internal class FlashingLettersText : AbstractEffect
             }
         }
 
-        if (_frameCounter++ % 4 == 0)
+        if (_frameNumber++ % 4 == 0)
         {
             _scrollOffset++;
             if (_scrollOffset >= _totalTextWidth + LedLine.Width)

@@ -20,7 +20,7 @@ internal class SnakeGame : AbstractEffect
 
     private bool _running = true;
 
-    private int _currentFrame = 0;
+    private int _frameNumber = 0;
 
     public SnakeGame(LedLine attachedLedLine) : base(attachedLedLine)
     {
@@ -38,7 +38,7 @@ internal class SnakeGame : AbstractEffect
 
     protected override void MoveNext()
     {
-        if (_currentFrame++ % 10 != 0)
+        if (_frameNumber++ % 10 != 0)
         {
             LedLine.SetColors(_colorsBuffer);
             return;

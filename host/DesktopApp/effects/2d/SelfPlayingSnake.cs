@@ -26,7 +26,7 @@ internal class SelfPlayingSnake : AbstractEffect
     private List<Index2D> _cachedPathToApple = [];
     private List<Index2D> _cachedPathToTail = [];
 
-    private int _currentFrame;
+    private int _frameNumber;
 
     private int _currentSeed;
     private Index2D _foodIndex;
@@ -48,7 +48,7 @@ internal class SelfPlayingSnake : AbstractEffect
 
     protected override void MoveNext()
     {
-        if (_currentFrame++ % 3 != 0)
+        if (_frameNumber++ % 3 != 0)
         {
             LedLine.SetColors(_colorsBuffer);
             return;

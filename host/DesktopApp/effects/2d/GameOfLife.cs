@@ -13,12 +13,12 @@ internal class GameOfLife(LedLine attachedLedLine) : AbstractEffect(attachedLedL
     private readonly Random _random = new();
     private readonly List<bool[][]> _statesHistory = [];
 
-    private int _frame = 0;
+    private int _frameNumber = 0;
     private int _iterationsUntilRestart = -1;
 
     protected override void MoveNext()
     {
-        if (_frame++ % 10 != 0)
+        if (_frameNumber++ % 10 != 0)
         {
             LedLine.SetColors(_colorsBuffer);
             return;

@@ -16,7 +16,7 @@ internal class BuggedBeautifulFurrier : AbstractEffect
     private double _g = 0;
     private double _b = 0;
 
-    private int _frame = 0;
+    private int _frameNumber = 0;
 
     public BuggedBeautifulFurrier(LedLine attachedLedLine) : base(attachedLedLine)
     {
@@ -27,7 +27,7 @@ internal class BuggedBeautifulFurrier : AbstractEffect
 
     protected override void MoveNext()
     {
-        if (_frame++ % 2 == 0)
+        if (_frameNumber++ % 2 == 0)
         {
             LedLine.SetColors(_colorsBuffer);
             return;

@@ -58,7 +58,7 @@ internal class JuliaSetZoom(LedLine attachedLedLine) : RaytracedEffect(attachedL
     private void FindEdgePoint()
     {
         // Sample points in a spiral pattern to find interesting edge points
-        int samples = 20;
+        const int samples = 20;
         double bestScore = 0;
         double bestX = _targetX;
         double bestY = _targetY;

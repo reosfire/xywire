@@ -7,11 +7,11 @@ internal class Rain(LedLine attachedLedLine) : AbstractEffect(attachedLedLine)
     private readonly Color[][] _colorsBuffer =
         Array2D.CreateJagged<Color>(attachedLedLine.Height, attachedLedLine.Width);
 
-    private int _framesCount = 0;
+    private int _frameNumber = 0;
 
     protected override void MoveNext()
     {
-        if (_framesCount++ % 5 == 0)
+        if (_frameNumber++ % 5 == 0)
         {
             _colorsBuffer.ShiftDown();
 
