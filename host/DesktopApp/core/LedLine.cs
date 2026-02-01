@@ -3,7 +3,7 @@ using System.Net.Sockets;
 
 namespace Leds.core;
 
-public class LedLine
+public class LedLine : IDisposable
 {
     private const byte BrightnessPacketId = 1;
     private const byte DataPacketId = 2;
@@ -17,18 +17,20 @@ public class LedLine
 
     private readonly IPEndPoint _ipEndPoint;
     private readonly UdpClient _udpClient;
+    private readonly List<TaskCompletionSource<byte[]>> _pendingReceives = [];
 
     private uint _generation = 1;
 
-    private Thread _udpListenerThread;
-    private readonly List<TaskCompletionSource<byte[]>> _pendingReceives = [];
+    private readonly Thread _udpListenerThread;
+
+    private SocketException? _socketException = null;
 
     public LedLine(string ipAddress, int port = 25565, int width = 14, int height = 14)
     {
         _ipEndPoint = new IPEndPoint(IPAddress.Parse(ipAddress), port);
         _udpClient = new UdpClient();
         _udpClient.Connect(_ipEndPoint);
-        
+
         Width = width;
         Height = height;
         LedsCount = width * height;
@@ -103,7 +105,7 @@ public class LedLine
     public async Task SendBrightnessPacket(byte brightness)
     {
         _brightnessPacketBuffer[1] = brightness;
-        
+
         await SendAcked(_brightnessPacketBuffer);
     }
 
@@ -116,10 +118,10 @@ public class LedLine
     }
 
     public Task SendClearPacket() => SendAcked(_clearPacketBuffer);
-    
+
     private async Task SendAcked(byte[] packet)
     {
-        while (true)
+        while (_socketException == null)
         {
             TaskCompletionSource<byte[]> tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -127,34 +129,44 @@ public class LedLine
             {
                 _pendingReceives.Add(tcs);
             }
-            
+
             await _udpClient.SendAsync(packet);
-            
+
             Task completed = await Task.WhenAny(tcs.Task, Task.Delay(200));
 
-            if (completed == tcs.Task) break;
-            
+            if (completed == tcs.Task) return;
+
             lock (_pendingReceives)
             {
                 _pendingReceives.Remove(tcs);
             }
         }
+
+        throw _socketException;
     }
 
     private void UdpReadingLoop()
     {
         while (true)
         {
-            IPEndPoint remoteEndPoint = new(IPAddress.Any, 0);
-            byte[] received = _udpClient.Receive(ref remoteEndPoint);
-
-            lock (_pendingReceives)
+            try
             {
-                if (_pendingReceives.Count == 0) continue;
-                
-                TaskCompletionSource<byte[]> tcs = _pendingReceives.Last();
-                _pendingReceives.RemoveAt(_pendingReceives.Count - 1);
-                tcs.SetResult(received);
+                IPEndPoint remoteEndPoint = new(IPAddress.Any, 0);
+                byte[] received = _udpClient.Receive(ref remoteEndPoint);
+
+                lock (_pendingReceives)
+                {
+                    if (_pendingReceives.Count == 0) continue;
+
+                    TaskCompletionSource<byte[]> tcs = _pendingReceives.Last();
+                    _pendingReceives.RemoveAt(_pendingReceives.Count - 1);
+                    tcs.SetResult(received);
+                }
+            }
+            catch (SocketException e)
+            {
+                _socketException = e;
+                break;
             }
         }
     }
@@ -169,4 +181,6 @@ public class LedLine
         generation >>= 8;
         array[startIndex + 3] = (byte)(generation & 0xFFu);
     }
+
+    public void Dispose() => _udpClient.Dispose();
 }

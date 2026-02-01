@@ -47,14 +47,17 @@ public class EffectService
 
     public async Task ConnectToDevice(string ipAddress)
     {
-        await DisconnectFromDevice();
+        DisconnectFromDevice();
         _ledLine = new LedLine(ipAddress);
         await _ledLine.SendClearPacket();
     }
 
-    public async Task DisconnectFromDevice()
+    public void DisconnectFromDevice()
     {
-        await StopCurrentEffect();
+        _currentEffect?.StopLooping();
+        _currentEffect = null;
+        
+        _ledLine?.Dispose();
         _ledLine = null;
     }
 
