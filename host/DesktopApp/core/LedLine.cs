@@ -12,18 +12,23 @@ public class LedLine
     private const int DeadInFront = 1;
 
     private readonly byte[] _dataPacketBuffer;
-    private readonly UdpClient _udpClient;
+    private readonly byte[] _clearPacketBuffer = [ClearPacketId];
+    private readonly byte[] _brightnessPacketBuffer = [BrightnessPacketId, 0];
 
-    private byte _brightness;
+    private readonly IPEndPoint _ipEndPoint;
+    private readonly UdpClient _udpClient;
 
     private uint _generation = 1;
 
-    public LedLine(string ipAddress, int port = 25565, int width = 14, int height = 14, byte brightness = 20)
-    {
-        _udpClient = new UdpClient();
-        _udpClient.Connect(IPAddress.Parse(ipAddress), port);
+    private Thread _udpListenerThread;
+    private readonly List<TaskCompletionSource<byte[]>> _pendingReceives = [];
 
-        Clear();
+    public LedLine(string ipAddress, int port = 25565, int width = 14, int height = 14)
+    {
+        _ipEndPoint = new IPEndPoint(IPAddress.Parse(ipAddress), port);
+        _udpClient = new UdpClient();
+        _udpClient.Connect(_ipEndPoint);
+        
         Width = width;
         Height = height;
         LedsCount = width * height;
@@ -32,22 +37,13 @@ public class LedLine
         _dataPacketBuffer = new byte[1 + 4 + (DeadInFront + LedsCount) * 3];
         _dataPacketBuffer[0] = DataPacketId;
 
-        Brightness = brightness;
+        _udpListenerThread = new Thread(UdpReadingLoop);
+        _udpListenerThread.Start();
     }
 
     public int Width { get; private set; }
     public int Height { get; private set; }
     public int LedsCount { get; }
-
-    public byte Brightness
-    {
-        get => _brightness;
-        set
-        {
-            SendBrightnessPacket(value);
-            _brightness = value;
-        }
-    }
 
     public void SetColors(Color[][] colors)
     {
@@ -91,8 +87,6 @@ public class LedLine
         SendDataPacket();
     }
 
-    public void Clear() => SendClearPacket();
-
     private void ColorToData(Color color, int shift)
     {
         SetDataByte(color.Red, shift);
@@ -106,51 +100,73 @@ public class LedLine
         _dataPacketBuffer[at + 5 + DeadInFront * 3] = value;
     }
 
-    private void SendBrightnessPacket(byte brightness)
+    public async Task SendBrightnessPacket(byte brightness)
     {
-        byte[] packet = new[] { BrightnessPacketId, brightness };
-
-        while (true)
-        {
-            _udpClient.Send(packet);
-            bool receiveResult = _udpClient.ReceiveAsync().Wait(1000);
-            if (receiveResult) break;
-        }
+        _brightnessPacketBuffer[1] = brightness;
+        
+        await SendAcked(_brightnessPacketBuffer);
     }
 
     private void SendDataPacket()
     {
-        byte[] generationBytes = GenerationBytes(_generation);
-        Array.Copy(generationBytes, 0, _dataPacketBuffer, 1, generationBytes.Length);
+        GenerationBytesToArray(_generation, _dataPacketBuffer, 1);
 
         _udpClient.Send(_dataPacketBuffer);
         _generation++;
     }
 
-    private void SendClearPacket()
+    public Task SendClearPacket() => SendAcked(_clearPacketBuffer);
+    
+    private async Task SendAcked(byte[] packet)
     {
-        byte[] packet = new[] { ClearPacketId };
-
         while (true)
         {
-            _udpClient.Send(packet);
-            bool receiveResult = _udpClient.ReceiveAsync().Wait(1000);
-            if (receiveResult) break;
+            TaskCompletionSource<byte[]> tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            lock (_pendingReceives)
+            {
+                _pendingReceives.Add(tcs);
+            }
+            
+            await _udpClient.SendAsync(packet);
+            
+            Task completed = await Task.WhenAny(tcs.Task, Task.Delay(200));
+
+            if (completed == tcs.Task) break;
+            
+            lock (_pendingReceives)
+            {
+                _pendingReceives.Remove(tcs);
+            }
         }
     }
 
-    private static byte[] GenerationBytes(uint generation)
+    private void UdpReadingLoop()
     {
-        byte[] result = new byte[4];
+        while (true)
+        {
+            IPEndPoint remoteEndPoint = new(IPAddress.Any, 0);
+            byte[] received = _udpClient.Receive(ref remoteEndPoint);
 
-        result[0] = (byte)(generation & 0xFFu);
-        generation >>= 8;
-        result[1] = (byte)(generation & 0xFFu);
-        generation >>= 8;
-        result[2] = (byte)(generation & 0xFFu);
-        generation >>= 8;
-        result[3] = (byte)(generation & 0xFFu);
+            lock (_pendingReceives)
+            {
+                if (_pendingReceives.Count == 0) continue;
+                
+                TaskCompletionSource<byte[]> tcs = _pendingReceives.Last();
+                _pendingReceives.RemoveAt(_pendingReceives.Count - 1);
+                tcs.SetResult(received);
+            }
+        }
+    }
 
-        return result;
+    private static void GenerationBytesToArray(uint generation, byte[] array, int startIndex)
+    {
+        array[startIndex] = (byte)(generation & 0xFFu);
+        generation >>= 8;
+        array[startIndex + 1] = (byte)(generation & 0xFFu);
+        generation >>= 8;
+        array[startIndex + 2] = (byte)(generation & 0xFFu);
+        generation >>= 8;
+        array[startIndex + 3] = (byte)(generation & 0xFFu);
     }
 }

@@ -65,9 +65,9 @@
                         <DataTemplate>
                             <Border Margin="0,5"
                                     Padding="15"
-                                    Stroke="LightGray"
-                                    StrokeThickness="1"
-                                    BackgroundColor="{AppThemeBinding Light=White, Dark=#1E1E1E}"
+                                    Stroke="{Binding StrokeColor}"
+                                    StrokeThickness="2"
+                                    BackgroundColor="{Binding BackgroundColor}"
                                     StrokeShape="RoundRectangle 8">
                                 <Border.GestureRecognizers>
                                     <TapGestureRecognizer Tapped="OnEffectSelected" />

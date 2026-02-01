@@ -72,8 +72,7 @@ public abstract class AbstractEffect(LedLine attachedLedLine)
         }
 
         _thread = null;
-
-        LedLine.Clear();
+        
         ClearResources();
     }
 

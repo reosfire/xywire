@@ -45,40 +45,39 @@ public class EffectService
         ];
     }
 
-    public void ConnectToDevice(string ipAddress, int brightness = 100)
+    public async Task ConnectToDevice(string ipAddress)
     {
-        DisconnectFromDevice();
-        _ledLine = new LedLine(ipAddress, brightness: (byte)brightness);
+        await DisconnectFromDevice();
+        _ledLine = new LedLine(ipAddress);
     }
 
-    public void DisconnectFromDevice()
+    public async Task DisconnectFromDevice()
     {
-        StopCurrentEffect();
+        await StopCurrentEffect();
         _ledLine = null;
     }
 
-    public void StartEffect(EffectInfo effectInfo)
+    public async Task StartEffect(EffectInfo effectInfo)
     {
         if (_ledLine == null)
             throw new InvalidOperationException("No device connected");
 
-        StopCurrentEffect();
+        await StopCurrentEffect();
         _currentEffect = effectInfo.Factory(_ledLine);
         _currentEffect.StartLooping();
     }
 
-    public void StopCurrentEffect()
+    public async Task StopCurrentEffect()
     {
         _currentEffect?.StopLooping();
+        Task? clearTask = _ledLine?.SendClearPacket();
+        if (clearTask != null) await clearTask;
         _currentEffect = null;
     }
 
-    public void SetBrightness(int brightness)
+    public Task? SetBrightness(byte brightness)
     {
-        if (_ledLine != null)
-        {
-            _ledLine.Brightness = (byte)brightness;
-        }
+        return _ledLine?.SendBrightnessPacket(brightness);
     }
 }
 

@@ -1,3 +1,5 @@
+using System.Collections.ObjectModel;
+using System.ComponentModel;
 using Leds.services;
 
 namespace UI.Pages;
@@ -5,13 +7,14 @@ namespace UI.Pages;
 public partial class EffectControlPage : ContentPage
 {
     private readonly EffectService _effectService;
-    private List<EffectInfo> _availableEffects;
+    private readonly ObservableCollection<EffectItemViewModel> _effectViewModels;
+    private EffectInfo? _currentlyPlayingEffect;
 
     public EffectControlPage(EffectService effectService)
     {
         InitializeComponent();
         _effectService = effectService;
-        _availableEffects = [];
+        _effectViewModels = [];
     }
 
     protected override void OnAppearing()
@@ -23,19 +26,34 @@ public partial class EffectControlPage : ContentPage
 
     private void LoadEffects()
     {
-        _availableEffects = EffectService.GetAvailableEffects();
-        EffectsCollectionView.ItemsSource = _availableEffects;
+        List<EffectInfo> availableEffects = EffectService.GetAvailableEffects();
+        _effectViewModels.Clear();
+
+        foreach (EffectInfo effect in availableEffects)
+        {
+            _effectViewModels.Add(new EffectItemViewModel { EffectInfo = effect, IsPlaying = false });
+        }
+
+        EffectsCollectionView.ItemsSource = _effectViewModels;
     }
 
     private async void OnEffectSelected(object sender, EventArgs e)
     {
         if (sender is not BindableObject bindable) return;
-        if (bindable.BindingContext is not EffectInfo effectInfo) return;
+        if (bindable.BindingContext is not EffectItemViewModel viewModel) return;
 
         try
         {
-            _effectService.StartEffect(effectInfo);
-            StatusLabel.Text = $"Running: {effectInfo.Name}";
+            EffectItemViewModel? previousViewModel =
+                _effectViewModels.FirstOrDefault(vm => vm.EffectInfo == _currentlyPlayingEffect);
+            previousViewModel?.IsPlaying = false;
+            
+            await _effectService.StartEffect(viewModel.EffectInfo);
+            _currentlyPlayingEffect = viewModel.EffectInfo;
+            
+            viewModel.IsPlaying = true;
+
+            StatusLabel.Text = $"Running: {viewModel.EffectInfo.Name}";
         }
         catch (Exception ex)
         {
@@ -43,17 +61,26 @@ public partial class EffectControlPage : ContentPage
         }
     }
 
-    private void OnStopEffectClicked(object sender, EventArgs e)
+    private async void OnStopEffectClicked(object sender, EventArgs e)
     {
-        _effectService.StopCurrentEffect();
+        if (_currentlyPlayingEffect != null)
+        {
+            EffectItemViewModel? previousViewModel =
+                _effectViewModels.FirstOrDefault(vm => vm.EffectInfo == _currentlyPlayingEffect);
+            previousViewModel?.IsPlaying = false;
+        }
+
+        await _effectService.StopCurrentEffect();
+        _currentlyPlayingEffect = null;
         StatusLabel.Text = "No effect running";
     }
 
-    private void OnBrightnessChanged(object sender, ValueChangedEventArgs e)
+    private async void OnBrightnessChanged(object sender, ValueChangedEventArgs e)
     {
-        int brightness = (int)e.NewValue;
+        byte brightness = (byte)(int)e.NewValue;
         BrightnessLabel.Text = brightness.ToString();
-        _effectService.SetBrightness(brightness);
+        Task? setBrightnessTask = _effectService.SetBrightness(brightness);
+        if (setBrightnessTask != null) await setBrightnessTask;
     }
 
     private void UpdateStatus()
@@ -62,4 +89,30 @@ public partial class EffectControlPage : ContentPage
             ? "Effect is running"
             : "No effect running";
     }
+}
+
+public class EffectItemViewModel : INotifyPropertyChanged
+{
+    public required EffectInfo EffectInfo { get; init; }
+
+    public string Name => EffectInfo.Name;
+
+    public bool IsPlaying
+    {
+        get;
+        set
+        {
+            if (field == value) return;
+
+            field = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsPlaying)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(BackgroundColor)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StrokeColor)));
+        }
+    }
+
+    public Color BackgroundColor => IsPlaying ? Colors.LightGreen.MultiplyAlpha(0.5f) : Colors.Transparent;
+    public Color StrokeColor => IsPlaying ? Colors.Green : Colors.LightGray;
+
+    public event PropertyChangedEventHandler? PropertyChanged;
 }
