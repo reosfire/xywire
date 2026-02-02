@@ -1,0 +1,62 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="XywireHost.UI.Pages.MainPage"
+             Title="Xywire LED Control">
+
+    <ScrollView>
+        <VerticalStackLayout
+            Spacing="25"
+            Padding="30"
+            VerticalOptions="Center">
+
+            <Label
+                Text="Xywire LED Control"
+                SemanticProperties.HeadingLevel="Level1"
+                FontSize="32"
+                HorizontalOptions="Center"
+                FontAttributes="Bold" />
+
+            <Label
+                Text="Control your LED line with various effects and settings"
+                SemanticProperties.HeadingLevel="Level2"
+                FontSize="16"
+                HorizontalOptions="Center"
+                HorizontalTextAlignment="Center"
+                Margin="0,0,0,20" />
+
+            <Button
+                Text="Connect to Device"
+                SemanticProperties.Hint="Connect to your LED device"
+                Clicked="OnConnectDeviceClicked"
+                HorizontalOptions="Fill"
+                Margin="0,10,0,0" />
+
+            <Button
+                Text="WiFi Setup (Bluetooth)"
+                SemanticProperties.Hint="Setup WiFi credentials via Bluetooth"
+                Clicked="OnWiFiSetupClicked"
+                HorizontalOptions="Fill"
+                Margin="0,10,0,0" />
+
+            <Button
+                Text="Effect Control"
+                SemanticProperties.Hint="Select and control LED effects"
+                Clicked="OnEffectControlClicked"
+                HorizontalOptions="Fill"
+                Margin="0,10,0,0"
+                IsEnabled="{Binding IsConnected}" />
+
+            <Label
+                x:Name="StatusLabel"
+                Text="Not connected"
+                FontSize="14"
+                HorizontalOptions="Center"
+                Margin="0,20,0,0"
+                TextColor="Gray" />
+
+        </VerticalStackLayout>
+    </ScrollView>
+
+</ContentPage>
