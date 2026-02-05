@@ -36,7 +36,7 @@ public interface IDataSource
     IEffectOutputsCollection OutputSlots { get; }
 }
 
-class BaseEffect : IDataSource, IDataSink
+abstract class BaseEffect : IDataSource, IDataSink
 {
     private readonly EffectOutputsCollection _outputs = new();
     private readonly EffectInputsCollection _inputs = new();
@@ -48,16 +48,36 @@ class BaseEffect : IDataSource, IDataSink
     {
         IUntypedOutputSlot outputSlot = _outputs._container[outputSlotName];
         IUntypedInputHandle inputHandle = targetEffect._inputs._container[inputHandleName];
-
-        outputSlot.SetSetValue(inputHandle.GetSetValue());
+        BindOutputs(outputSlot, inputHandle);
     }
 
     public void BindOutputs(string outputSlotName, string inputHandleName, LedLine targetEffect)
     {
         IUntypedOutputSlot outputSlot = _outputs._container[outputSlotName];
         IUntypedInputHandle inputHandle = targetEffect.Inputs._container[inputHandleName];
+        BindOutputs(outputSlot, inputHandle);
+    }
+
+    private static void BindOutputs(IUntypedOutputSlot outputSlot, IUntypedInputHandle inputHandle)
+    {
+        if (inputHandle.IsConnected) 
+            throw new InvalidOperationException($"Input handle {inputHandle.Id} is already connected.");
 
         outputSlot.SetSetValue(inputHandle.GetSetValue());
+        inputHandle.IsConnected = true;
+    }
+
+    // TODO errors list reporting
+    public bool AllInputsConnected()
+    {
+        return _inputs._container.Values.All(inputHandle => inputHandle.IsConnected);
+    }
+    
+    public bool NoInputs() => _inputs._container.Count == 0;
+
+    public virtual void Initialize()
+    {
+        
     }
 }
 
@@ -103,6 +123,7 @@ interface IUntypedInputHandle
     Type SetValueType { get; }
     Type ValueType { get; }
     Delegate GetSetValue();
+    internal bool IsConnected { get; set; }
 }
 
 public class OutputSlot<T>(string id) : IUntypedOutputSlot
@@ -139,8 +160,10 @@ class InputHandle<T>(string id, Action<T> valueChangeHandler) : IUntypedInputHan
     public string Id { get; } = id;
     public Type SetValueType { get; } = typeof(Action<T>);
     public Type ValueType { get; } = typeof(T);
+    public bool IsConnected { get; set; }
 
     private Action<T> ValueChangeHandler { get; } = valueChangeHandler;
+
 
     public Delegate GetSetValue()
     {
@@ -216,6 +239,23 @@ readonly struct Buffer2D<T> : IReadOnlyBuffer2D<T>
                 action(new Index2D(row, col), _data[row, col]);
             }
         }
+    }
+}
+
+class ConstantEffect<T> : BaseEffect
+{
+    private readonly OutputSlot<T> _outputSlot;
+    private readonly T _value;
+
+    public ConstantEffect(T value)
+    {
+        _value = value;
+        _outputSlot = OutputSlots.RegisterOutput<T>("value");
+    }
+
+    public override void Initialize()
+    {
+        _outputSlot.Invoke(_value);
     }
 }
 
@@ -345,23 +385,52 @@ class SelectEffect : BaseEffect
 
 class User
 {
+    private static List<BaseEffect> _effects = [];
+    
+    private static T CreateEffect<T>(Func<T> creator) where T : BaseEffect
+    {
+        T result = creator();
+        _effects.Add(result);
+        return result;
+    }
+    
     public static void Main()
     {
         LedLine ledline1 = new();
         LedLine ledline2 = new();
 
-        MulticastEffect multicastEffect = new();
+        MulticastEffect multicastEffect = CreateEffect(() => new MulticastEffect());
         // TODO recursive output collections or at least arrays
         multicastEffect.BindOutputs("colorBuffer0", "colorBuffer", ledline1);
         multicastEffect.BindOutputs("colorBuffer1", "colorBuffer", ledline2);
 
-        OverlayEffect overlayEffect = new();
+        OverlayEffect overlayEffect = CreateEffect(() => new OverlayEffect());
         overlayEffect.BindOutputs("colorBuffer", "colorBuffer", multicastEffect);
 
-        CubeEffect cubeEffect = new();
+        CubeEffect cubeEffect = CreateEffect(() => new CubeEffect());
         cubeEffect.BindOutputs("colorBuffer", "colorBuffer0", overlayEffect);
 
-        RainbowEffect rainbowEffect = new();
+        RainbowEffect rainbowEffect = CreateEffect(() => new RainbowEffect());
         rainbowEffect.BindOutputs("colorBuffer", "colorBuffer1", overlayEffect);
+        
+        ConstantEffect<int> widthEffect = CreateEffect(() => new ConstantEffect<int>(10));
+        widthEffect.BindOutputs("value", "width", rainbowEffect);
+        ConstantEffect<int> heightEffect = CreateEffect(() => new ConstantEffect<int>(10));
+        heightEffect.BindOutputs("value", "height", rainbowEffect);
+        ConstantEffect<int> fpsEffect = CreateEffect(() => new ConstantEffect<int>(30));
+        fpsEffect.BindOutputs("value", "fps", rainbowEffect);
+        
+        foreach (BaseEffect effect in _effects)
+        {
+            if (!effect.AllInputsConnected())
+            {
+                throw new InvalidOperationException("Not all inputs are connected for effect " + effect.GetType().Name);
+            }
+        }
+        
+        foreach (BaseEffect effect in _effects)
+        {
+            effect.Initialize();
+        }
     }
 }
