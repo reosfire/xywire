@@ -1,6 +1,4 @@
-﻿using System.Collections.Immutable;
-using System.Reflection;
-using System.Runtime.CompilerServices;
+﻿using System.Diagnostics;
 using XywireHost.Core.core;
 
 namespace ExamplePlugin;
@@ -36,13 +34,23 @@ public interface IDataSource
     IEffectOutputsCollection OutputSlots { get; }
 }
 
-abstract class BaseEffect : IDataSource, IDataSink
+public interface IEffectContext
+{
+    Scheduler Scheduler { get; }
+}
+
+internal class EffectContext : IEffectContext
+{
+    public Scheduler Scheduler { get; } = new();
+}
+
+internal abstract class BaseEffect : IDataSource, IDataSink
 {
     private readonly EffectOutputsCollection _outputs = new();
     private readonly EffectInputsCollection _inputs = new();
+    public IEffectInputsCollection InputHandles => _inputs;
 
     public IEffectOutputsCollection OutputSlots => _outputs;
-    public IEffectInputsCollection InputHandles => _inputs;
 
     public void BindOutputs(string outputSlotName, string inputHandleName, BaseEffect targetEffect)
     {
@@ -60,7 +68,7 @@ abstract class BaseEffect : IDataSource, IDataSink
 
     private static void BindOutputs(IUntypedOutputSlot outputSlot, IUntypedInputHandle inputHandle)
     {
-        if (inputHandle.IsConnected) 
+        if (inputHandle.IsConnected)
             throw new InvalidOperationException($"Input handle {inputHandle.Id} is already connected.");
 
         outputSlot.SetSetValue(inputHandle.GetSetValue());
@@ -68,29 +76,25 @@ abstract class BaseEffect : IDataSource, IDataSink
     }
 
     // TODO errors list reporting
-    public bool AllInputsConnected()
-    {
-        return _inputs._container.Values.All(inputHandle => inputHandle.IsConnected);
-    }
-    
+    public bool AllInputsConnected() => _inputs._container.Values.All(inputHandle => inputHandle.IsConnected);
+
     public bool NoInputs() => _inputs._container.Count == 0;
 
-    public virtual void Initialize()
+    public virtual void Initialize(IEffectContext context)
     {
-        
     }
 }
 
-class LedLine : IDataSink
+internal class LedLine : IDataSink
 {
     internal readonly EffectInputsCollection Inputs = new();
-
-    public IEffectInputsCollection InputHandles => Inputs;
 
     public LedLine()
     {
         Inputs.RegisterInput<IReadOnlyBuffer2D<Color>>("colorBuffer", SetColorBuffer);
     }
+
+    public IEffectInputsCollection InputHandles => Inputs;
 
     // TODO actually it should accept 1D buffer
     private void SetColorBuffer(IReadOnlyBuffer2D<Color> buffer)
@@ -108,7 +112,7 @@ class LedLine : IDataSink
     }
 }
 
-interface IUntypedOutputSlot
+internal interface IUntypedOutputSlot
 {
     string Id { get; }
     Type SetValueType { get; }
@@ -117,29 +121,21 @@ interface IUntypedOutputSlot
     void SetSetValue(Delegate setValue);
 }
 
-interface IUntypedInputHandle
+internal interface IUntypedInputHandle
 {
     string Id { get; }
     Type SetValueType { get; }
     Type ValueType { get; }
-    Delegate GetSetValue();
     internal bool IsConnected { get; set; }
+    Delegate GetSetValue();
 }
 
 public class OutputSlot<T>(string id) : IUntypedOutputSlot
 {
+    private Action<T>? _setValueDelegate;
     public string Id { get; } = id;
     public Type SetValueType { get; } = typeof(Action<T>);
     public Type ValueType { get; } = typeof(T);
-
-    private Action<T>? _setValueDelegate;
-
-    public void Invoke(T value)
-    {
-        if (_setValueDelegate == null)
-            throw new InvalidOperationException($"Output slot {Id} is not connected to any input.");
-        _setValueDelegate!.Invoke(value);
-    }
 
     public void SetSetValue(Delegate setValue)
     {
@@ -153,22 +149,25 @@ public class OutputSlot<T>(string id) : IUntypedOutputSlot
                 $"Invalid set value type for output slot {Id}. Expected Action<{typeof(T).Name}>.");
         }
     }
+
+    public void Invoke(T value)
+    {
+        if (_setValueDelegate == null)
+            throw new InvalidOperationException($"Output slot {Id} is not connected to any input.");
+        _setValueDelegate!.Invoke(value);
+    }
 }
 
-class InputHandle<T>(string id, Action<T> valueChangeHandler) : IUntypedInputHandle
+internal class InputHandle<T>(string id, Action<T> valueChangeHandler) : IUntypedInputHandle
 {
+    private Action<T> ValueChangeHandler { get; } = valueChangeHandler;
     public string Id { get; } = id;
     public Type SetValueType { get; } = typeof(Action<T>);
     public Type ValueType { get; } = typeof(T);
     public bool IsConnected { get; set; }
 
-    private Action<T> ValueChangeHandler { get; } = valueChangeHandler;
 
-
-    public Delegate GetSetValue()
-    {
-        return ValueChangeHandler;
-    }
+    public Delegate GetSetValue() => ValueChangeHandler;
 }
 
 public interface IEffectInputsCollection
@@ -185,10 +184,8 @@ internal class EffectInputsCollection : IEffectInputsCollection
 {
     internal Dictionary<string, IUntypedInputHandle> _container = new();
 
-    public void RegisterInput<T>(string name, Action<T> callback)
-    {
+    public void RegisterInput<T>(string name, Action<T> callback) =>
         _container[name] = new InputHandle<T>(name, callback);
-    }
 }
 
 internal class EffectOutputsCollection : IEffectOutputsCollection
@@ -203,16 +200,16 @@ internal class EffectOutputsCollection : IEffectOutputsCollection
     }
 }
 
-readonly record struct Index2D(int Row, int Col);
+internal readonly record struct Index2D(int Row, int Col);
 
-interface IReadOnlyBuffer2D<T>
+internal interface IReadOnlyBuffer2D<T>
 {
     T this[Index2D index] { get; }
     int Rows { get; }
     int Cols { get; }
 }
 
-readonly struct Buffer2D<T> : IReadOnlyBuffer2D<T>
+internal readonly struct Buffer2D<T> : IReadOnlyBuffer2D<T>
 {
     private readonly T[,] _data;
 
@@ -229,7 +226,7 @@ readonly struct Buffer2D<T> : IReadOnlyBuffer2D<T>
         get => _data[index.Row, index.Col];
         set => _data[index.Row, index.Col] = value;
     }
-    
+
     public void ForeachIndexed(Action<Index2D, T> action)
     {
         for (int row = 0; row < Rows; row++)
@@ -242,7 +239,68 @@ readonly struct Buffer2D<T> : IReadOnlyBuffer2D<T>
     }
 }
 
-class ConstantEffect<T> : BaseEffect
+public class TaskHandle
+{
+    internal volatile bool Running = true;
+    internal Thread? Thread;
+
+    public void Stop()
+    {
+        Running = false;
+        Thread?.Join();
+    }
+}
+
+public class Scheduler
+{
+    public TaskHandle ScheduleTask(Action taskAction, int fps)
+    {
+        ArgumentNullException.ThrowIfNull(taskAction);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(fps);
+
+        TaskHandle handle = new();
+
+        handle.Thread = new Thread(() =>
+        {
+            FpsStableLoop(taskAction, fps, handle);
+        }) { IsBackground = true };
+
+        handle.Thread.Start();
+        return handle;
+    }
+
+    private void FpsStableLoop(Action taskAction, int fps, TaskHandle handle)
+    {
+        double frameTimeMs = 1000.0 / fps;
+        Stopwatch sw = Stopwatch.StartNew();
+
+        double nextFrameTime = sw.Elapsed.TotalMilliseconds;
+
+        while (handle.Running)
+        {
+            taskAction();
+
+            nextFrameTime += frameTimeMs;
+
+            while (handle.Running && sw.Elapsed.TotalMilliseconds < nextFrameTime)
+            {
+                double remaining = nextFrameTime - sw.Elapsed.TotalMilliseconds;
+
+                if (remaining > 2.0)
+                    Thread.Sleep(1);
+                else
+                    Thread.SpinWait(10);
+            }
+            
+            if (sw.Elapsed.TotalMilliseconds > nextFrameTime + frameTimeMs)
+            {
+                nextFrameTime = sw.Elapsed.TotalMilliseconds;
+            }
+        }
+    }
+}
+
+internal class ConstantEffect<T> : BaseEffect
 {
     private readonly OutputSlot<T> _outputSlot;
     private readonly T _value;
@@ -253,17 +311,16 @@ class ConstantEffect<T> : BaseEffect
         _outputSlot = OutputSlots.RegisterOutput<T>("value");
     }
 
-    public override void Initialize()
-    {
-        _outputSlot.Invoke(_value);
-    }
+    public override void Initialize(IEffectContext context) => _outputSlot.Invoke(_value);
 }
 
-class RainbowEffect : BaseEffect
+internal class RainbowEffect : BaseEffect
 {
-    private Buffer2D<Color> _colorBuffer;
-
     private readonly OutputSlot<IReadOnlyBuffer2D<Color>> _colorsOutput;
+    private Buffer2D<Color> _colorBuffer;
+    
+    private IEffectContext _context;
+    private TaskHandle? _renderTaskHandle;
 
     private int _width;
     private int _height;
@@ -278,14 +335,22 @@ class RainbowEffect : BaseEffect
         InputHandles.RegisterInput<int>("fps", SetFps);
     }
 
-    private void Render()
+    public override void Initialize(IEffectContext context)
     {
-        _colorsOutput.Invoke(_colorBuffer);
+        _context = context;
+        Restart();
     }
+
+    private void Render() => _colorsOutput.Invoke(_colorBuffer);
 
     private void Restart()
     {
+        _renderTaskHandle?.Stop();
+        
+        if (_width <= 0 || _height <= 0 || _fps <= 0) return;
+        
         _colorBuffer = new Buffer2D<Color>(_height, _width);
+        _renderTaskHandle = _context.Scheduler.ScheduleTask(Render, _fps);
     }
 
     private void SetWidth(int width)
@@ -307,7 +372,7 @@ class RainbowEffect : BaseEffect
     }
 }
 
-class CubeEffect : BaseEffect
+internal class CubeEffect : BaseEffect
 {
     private readonly OutputSlot<IReadOnlyBuffer2D<Color>> _colorsOutput;
 
@@ -317,7 +382,7 @@ class CubeEffect : BaseEffect
     }
 }
 
-class OverlayEffect : BaseEffect
+internal class OverlayEffect : BaseEffect
 {
     private readonly OutputSlot<IReadOnlyBuffer2D<Color>> _colorsOutput;
 
@@ -329,18 +394,12 @@ class OverlayEffect : BaseEffect
         InputHandles.RegisterInput<IReadOnlyBuffer2D<Color>>("colorBuffer1", SetColorBuffer1);
     }
 
-    private void SetColorBuffer0(IReadOnlyBuffer2D<Color> buffer)
-    {
-        _colorsOutput.Invoke(buffer);
-    }
+    private void SetColorBuffer0(IReadOnlyBuffer2D<Color> buffer) => _colorsOutput.Invoke(buffer);
 
-    private void SetColorBuffer1(IReadOnlyBuffer2D<Color> buffer)
-    {
-        _colorsOutput.Invoke(buffer);
-    }
+    private void SetColorBuffer1(IReadOnlyBuffer2D<Color> buffer) => _colorsOutput.Invoke(buffer);
 }
 
-class MulticastEffect : BaseEffect
+internal class MulticastEffect : BaseEffect
 {
     private readonly OutputSlot<IReadOnlyBuffer2D<Color>> _colorsOutput0;
     private readonly OutputSlot<IReadOnlyBuffer2D<Color>> _colorsOutput1;
@@ -360,7 +419,7 @@ class MulticastEffect : BaseEffect
     }
 }
 
-class SelectEffect : BaseEffect
+internal class SelectEffect : BaseEffect
 {
     private readonly OutputSlot<IReadOnlyBuffer2D<Color>> _colorsOutput;
 
@@ -372,28 +431,22 @@ class SelectEffect : BaseEffect
         InputHandles.RegisterInput<IReadOnlyBuffer2D<Color>>("colorBuffer1", SetColorBuffer1);
     }
 
-    private void SetColorBuffer0(IReadOnlyBuffer2D<Color> buffer)
-    {
-        _colorsOutput.Invoke(buffer);
-    }
+    private void SetColorBuffer0(IReadOnlyBuffer2D<Color> buffer) => _colorsOutput.Invoke(buffer);
 
-    private void SetColorBuffer1(IReadOnlyBuffer2D<Color> buffer)
-    {
-        _colorsOutput.Invoke(buffer);
-    }
+    private void SetColorBuffer1(IReadOnlyBuffer2D<Color> buffer) => _colorsOutput.Invoke(buffer);
 }
 
-class User
+internal class User
 {
-    private static List<BaseEffect> _effects = [];
-    
+    private static readonly List<BaseEffect> _effects = [];
+
     private static T CreateEffect<T>(Func<T> creator) where T : BaseEffect
     {
         T result = creator();
         _effects.Add(result);
         return result;
     }
-    
+
     public static void Main()
     {
         LedLine ledline1 = new();
@@ -412,14 +465,14 @@ class User
 
         RainbowEffect rainbowEffect = CreateEffect(() => new RainbowEffect());
         rainbowEffect.BindOutputs("colorBuffer", "colorBuffer1", overlayEffect);
-        
+
         ConstantEffect<int> widthEffect = CreateEffect(() => new ConstantEffect<int>(10));
         widthEffect.BindOutputs("value", "width", rainbowEffect);
         ConstantEffect<int> heightEffect = CreateEffect(() => new ConstantEffect<int>(10));
         heightEffect.BindOutputs("value", "height", rainbowEffect);
         ConstantEffect<int> fpsEffect = CreateEffect(() => new ConstantEffect<int>(30));
         fpsEffect.BindOutputs("value", "fps", rainbowEffect);
-        
+
         foreach (BaseEffect effect in _effects)
         {
             if (!effect.AllInputsConnected())
@@ -428,9 +481,13 @@ class User
             }
         }
         
+        IEffectContext context = new EffectContext();
+
         foreach (BaseEffect effect in _effects)
         {
-            effect.Initialize();
+            effect.Initialize(context);
         }
+
+        Console.ReadKey();
     }
 }
