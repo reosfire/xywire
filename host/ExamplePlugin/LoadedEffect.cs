@@ -43,20 +43,20 @@ class BaseEffect : IDataSource, IDataSink
 
     public IEffectOutputsCollection OutputSlots => _outputs;
     public IEffectInputsCollection InputHandles => _inputs;
-    
+
     public void BindOutputs(string outputSlotName, string inputHandleName, BaseEffect targetEffect)
     {
         IUntypedOutputSlot outputSlot = _outputs._container[outputSlotName];
         IUntypedInputHandle inputHandle = targetEffect._inputs._container[inputHandleName];
-        
+
         outputSlot.SetSetValue(inputHandle.GetSetValue());
     }
-    
+
     public void BindOutputs(string outputSlotName, string inputHandleName, LedLine targetEffect)
     {
         IUntypedOutputSlot outputSlot = _outputs._container[outputSlotName];
         IUntypedInputHandle inputHandle = targetEffect.Inputs._container[inputHandleName];
-        
+
         outputSlot.SetSetValue(inputHandle.GetSetValue());
     }
 }
@@ -66,6 +66,26 @@ class LedLine : IDataSink
     internal readonly EffectInputsCollection Inputs = new();
 
     public IEffectInputsCollection InputHandles => Inputs;
+
+    public LedLine()
+    {
+        Inputs.RegisterInput<IReadOnlyBuffer2D<Color>>("colorBuffer", SetColorBuffer);
+    }
+
+    // TODO actually it should accept 1D buffer
+    private void SetColorBuffer(IReadOnlyBuffer2D<Color> buffer)
+    {
+        for (int row = 0; row < buffer.Rows; row++)
+        {
+            for (int col = 0; col < buffer.Cols; col++)
+            {
+                Color color = buffer[new Index2D(row, col)];
+                Console.Write(color);
+            }
+
+            Console.WriteLine();
+        }
+    }
 }
 
 interface IUntypedOutputSlot
@@ -108,7 +128,8 @@ public class OutputSlot<T>(string id) : IUntypedOutputSlot
         }
         else
         {
-            throw new InvalidOperationException($"Invalid set value type for output slot {Id}. Expected Action<{typeof(T).Name}>.");
+            throw new InvalidOperationException(
+                $"Invalid set value type for output slot {Id}. Expected Action<{typeof(T).Name}>.");
         }
     }
 }
@@ -118,7 +139,7 @@ class InputHandle<T>(string id, Action<T> valueChangeHandler) : IUntypedInputHan
     public string Id { get; } = id;
     public Type SetValueType { get; } = typeof(Action<T>);
     public Type ValueType { get; } = typeof(T);
-    
+
     private Action<T> ValueChangeHandler { get; } = valueChangeHandler;
 
     public Delegate GetSetValue()
@@ -164,12 +185,17 @@ readonly record struct Index2D(int Row, int Col);
 interface IReadOnlyBuffer2D<T>
 {
     T this[Index2D index] { get; }
+    int Rows { get; }
+    int Cols { get; }
 }
 
 readonly struct Buffer2D<T> : IReadOnlyBuffer2D<T>
 {
     private readonly T[,] _data;
-    
+
+    public int Rows => _data.GetLength(0);
+    public int Cols => _data.GetLength(1);
+
     public Buffer2D(int rows, int cols)
     {
         _data = new T[rows, cols];
@@ -179,6 +205,17 @@ readonly struct Buffer2D<T> : IReadOnlyBuffer2D<T>
     {
         get => _data[index.Row, index.Col];
         set => _data[index.Row, index.Col] = value;
+    }
+    
+    public void ForeachIndexed(Action<Index2D, T> action)
+    {
+        for (int row = 0; row < Rows; row++)
+        {
+            for (int col = 0; col < Cols; col++)
+            {
+                action(new Index2D(row, col), _data[row, col]);
+            }
+        }
     }
 }
 
@@ -202,7 +239,7 @@ class RainbowEffect : BaseEffect
     }
 
     private void Render()
-    { 
+    {
         _colorsOutput.Invoke(_colorBuffer);
     }
 
@@ -232,18 +269,78 @@ class RainbowEffect : BaseEffect
 
 class CubeEffect : BaseEffect
 {
+    private readonly OutputSlot<IReadOnlyBuffer2D<Color>> _colorsOutput;
+
+    public CubeEffect()
+    {
+        _colorsOutput = OutputSlots.RegisterOutput<IReadOnlyBuffer2D<Color>>("colorBuffer");
+    }
 }
 
 class OverlayEffect : BaseEffect
 {
+    private readonly OutputSlot<IReadOnlyBuffer2D<Color>> _colorsOutput;
+
+    public OverlayEffect()
+    {
+        _colorsOutput = OutputSlots.RegisterOutput<IReadOnlyBuffer2D<Color>>("colorBuffer");
+
+        InputHandles.RegisterInput<IReadOnlyBuffer2D<Color>>("colorBuffer0", SetColorBuffer0);
+        InputHandles.RegisterInput<IReadOnlyBuffer2D<Color>>("colorBuffer1", SetColorBuffer1);
+    }
+
+    private void SetColorBuffer0(IReadOnlyBuffer2D<Color> buffer)
+    {
+        _colorsOutput.Invoke(buffer);
+    }
+
+    private void SetColorBuffer1(IReadOnlyBuffer2D<Color> buffer)
+    {
+        _colorsOutput.Invoke(buffer);
+    }
 }
 
 class MulticastEffect : BaseEffect
 {
+    private readonly OutputSlot<IReadOnlyBuffer2D<Color>> _colorsOutput0;
+    private readonly OutputSlot<IReadOnlyBuffer2D<Color>> _colorsOutput1;
+
+    public MulticastEffect()
+    {
+        _colorsOutput0 = OutputSlots.RegisterOutput<IReadOnlyBuffer2D<Color>>("colorBuffer0");
+        _colorsOutput1 = OutputSlots.RegisterOutput<IReadOnlyBuffer2D<Color>>("colorBuffer1");
+
+        InputHandles.RegisterInput<IReadOnlyBuffer2D<Color>>("colorBuffer", SetColorBuffer);
+    }
+
+    private void SetColorBuffer(IReadOnlyBuffer2D<Color> buffer)
+    {
+        _colorsOutput0.Invoke(buffer);
+        _colorsOutput1.Invoke(buffer);
+    }
 }
 
 class SelectEffect : BaseEffect
 {
+    private readonly OutputSlot<IReadOnlyBuffer2D<Color>> _colorsOutput;
+
+    public SelectEffect()
+    {
+        _colorsOutput = OutputSlots.RegisterOutput<IReadOnlyBuffer2D<Color>>("colorBuffer");
+
+        InputHandles.RegisterInput<IReadOnlyBuffer2D<Color>>("colorBuffer0", SetColorBuffer0);
+        InputHandles.RegisterInput<IReadOnlyBuffer2D<Color>>("colorBuffer1", SetColorBuffer1);
+    }
+
+    private void SetColorBuffer0(IReadOnlyBuffer2D<Color> buffer)
+    {
+        _colorsOutput.Invoke(buffer);
+    }
+
+    private void SetColorBuffer1(IReadOnlyBuffer2D<Color> buffer)
+    {
+        _colorsOutput.Invoke(buffer);
+    }
 }
 
 class User
@@ -262,9 +359,9 @@ class User
         overlayEffect.BindOutputs("colorBuffer", "colorBuffer", multicastEffect);
 
         CubeEffect cubeEffect = new();
-        cubeEffect.BindOutputs("colorBuffer", "colorBuffer", overlayEffect);
+        cubeEffect.BindOutputs("colorBuffer", "colorBuffer0", overlayEffect);
 
         RainbowEffect rainbowEffect = new();
-        rainbowEffect.BindOutputs("colorBuffer", "colorBuffer", overlayEffect);
+        rainbowEffect.BindOutputs("colorBuffer", "colorBuffer1", overlayEffect);
     }
 }
