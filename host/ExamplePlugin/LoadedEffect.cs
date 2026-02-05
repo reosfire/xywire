@@ -1,4 +1,5 @@
 ﻿using System.Collections.Immutable;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using XywireHost.Core.core;
 
@@ -25,12 +26,12 @@ public class LoadedEffect : LoadedEffectBase
     }
 }
 
-interface IDataSink
+public interface IDataSink
 {
     IEffectInputsCollection InputHandles { get; }
 }
 
-interface IDataSource
+public interface IDataSource
 {
     IEffectOutputsCollection OutputSlots { get; }
 }
@@ -42,69 +43,119 @@ class BaseEffect : IDataSource, IDataSink
 
     public IEffectOutputsCollection OutputSlots => _outputs;
     public IEffectInputsCollection InputHandles => _inputs;
+    
+    public void BindOutputs(string outputSlotName, string inputHandleName, BaseEffect targetEffect)
+    {
+        IUntypedOutputSlot outputSlot = _outputs._container[outputSlotName];
+        IUntypedInputHandle inputHandle = targetEffect._inputs._container[inputHandleName];
+        
+        outputSlot.SetSetValue(inputHandle.GetSetValue());
+    }
+    
+    public void BindOutputs(string outputSlotName, string inputHandleName, LedLine targetEffect)
+    {
+        IUntypedOutputSlot outputSlot = _outputs._container[outputSlotName];
+        IUntypedInputHandle inputHandle = targetEffect.Inputs._container[inputHandleName];
+        
+        outputSlot.SetSetValue(inputHandle.GetSetValue());
+    }
 }
 
 class LedLine : IDataSink
 {
-    public IEffectInputsCollection InputHandles { get; }
+    internal readonly EffectInputsCollection Inputs = new();
+
+    public IEffectInputsCollection InputHandles => Inputs;
 }
 
 interface IUntypedOutputSlot
 {
+    string Id { get; }
+    Type SetValueType { get; }
+    Type ValueType { get; }
+
+    void SetSetValue(Delegate setValue);
 }
 
 interface IUntypedInputHandle
 {
+    string Id { get; }
+    Type SetValueType { get; }
+    Type ValueType { get; }
+    Delegate GetSetValue();
 }
 
-class OutputSlot<T>(string id, Action<T>? setValue) : IUntypedOutputSlot
+public class OutputSlot<T>(string id) : IUntypedOutputSlot
 {
-    private string Id { get; } = id;
-    private Action<T>? SetValue { get; } = setValue;
+    public string Id { get; } = id;
+    public Type SetValueType { get; } = typeof(Action<T>);
+    public Type ValueType { get; } = typeof(T);
 
-    public static implicit operator Action<T>(OutputSlot<T> outputSlot)
+    private Action<T>? _setValueDelegate;
+
+    public void Invoke(T value)
     {
-        if (outputSlot.SetValue == null)
-            throw new InvalidOperationException($"Output slot {outputSlot.Id} is not connected to any input.");
-        return outputSlot.SetValue!;
+        if (_setValueDelegate == null)
+            throw new InvalidOperationException($"Output slot {Id} is not connected to any input.");
+        _setValueDelegate!.Invoke(value);
+    }
+
+    public void SetSetValue(Delegate setValue)
+    {
+        if (setValue is Action<T> typedSetValue)
+        {
+            _setValueDelegate = typedSetValue;
+        }
+        else
+        {
+            throw new InvalidOperationException($"Invalid set value type for output slot {Id}. Expected Action<{typeof(T).Name}>.");
+        }
     }
 }
 
-class InputHandle<T>(string id, Action<T> setValue) : IUntypedInputHandle
+class InputHandle<T>(string id, Action<T> valueChangeHandler) : IUntypedInputHandle
 {
-    private string Id { get; } = id;
-    private Action<T> SetValue { get; } = setValue;
+    public string Id { get; } = id;
+    public Type SetValueType { get; } = typeof(Action<T>);
+    public Type ValueType { get; } = typeof(T);
+    
+    private Action<T> ValueChangeHandler { get; } = valueChangeHandler;
+
+    public Delegate GetSetValue()
+    {
+        return ValueChangeHandler;
+    }
 }
 
-interface IEffectInputsCollection
+public interface IEffectInputsCollection
 {
     void RegisterInput<T>(string name, Action<T> callback);
 }
 
-interface IEffectOutputsCollection
+public interface IEffectOutputsCollection
 {
     OutputSlot<T> RegisterOutput<T>(string name);
 }
 
-class EffectInputsCollection : IEffectInputsCollection
+internal class EffectInputsCollection : IEffectInputsCollection
 {
-    private Dictionary<string, IUntypedInputHandle> _inputs = new();
+    internal Dictionary<string, IUntypedInputHandle> _container = new();
 
     public void RegisterInput<T>(string name, Action<T> callback)
     {
-        _inputs[name] = new InputHandle<T>(name, callback);
+        _container[name] = new InputHandle<T>(name, callback);
     }
 }
 
-class EffectOutputsCollection : IEffectOutputsCollection
+internal class EffectOutputsCollection : IEffectOutputsCollection
 {
-    private Dictionary<string, IUntypedOutputSlot> _outputs = new();
+    internal Dictionary<string, IUntypedOutputSlot> _container = new();
 
     public OutputSlot<T> RegisterOutput<T>(string name)
     {
-        var outputSlot = new OutputSlot<T>(name, null);
-        _outputs[name] = outputSlot;
-        return
+        OutputSlot<T> outputSlot = new(name);
+        _container[name] = outputSlot;
+        return outputSlot;
     }
 }
 
@@ -152,7 +203,7 @@ class RainbowEffect : BaseEffect
 
     private void Render()
     { 
-        _colorsOutput(_colorBuffer);
+        _colorsOutput.Invoke(_colorBuffer);
     }
 
     private void Restart()
@@ -197,22 +248,23 @@ class SelectEffect : BaseEffect
 
 class User
 {
-    void Main()
+    public static void Main()
     {
-        var ledline1 = new LedLine();
-        var ledline2 = new LedLine();
+        LedLine ledline1 = new();
+        LedLine ledline2 = new();
 
-        var multicastEffect = new MulticastEffect();
-        multicastEffect.OutputSlots["colorBuffer"][0] = ledline1.InputHandles["colorBuffer"];
-        multicastEffect.OutputSlots["outputColor"][1] = ledline2.InputHandles["colorBuffer"];
+        MulticastEffect multicastEffect = new();
+        // TODO recursive output collections or at least arrays
+        multicastEffect.BindOutputs("colorBuffer0", "colorBuffer", ledline1);
+        multicastEffect.BindOutputs("colorBuffer1", "colorBuffer", ledline2);
 
-        var overlayEffect = new OverlayEffect();
-        overlayEffect.OutputSlots[0] = multicastEffect.InputHandles[0];
+        OverlayEffect overlayEffect = new();
+        overlayEffect.BindOutputs("colorBuffer", "colorBuffer", multicastEffect);
 
-        var cubeEffect = new CubeEffect();
-        cubeEffect.OutputSlots[0] = overlayEffect.InputHandles[0];
+        CubeEffect cubeEffect = new();
+        cubeEffect.BindOutputs("colorBuffer", "colorBuffer", overlayEffect);
 
-        var rainbowEffect = new RainbowEffect();
-        rainbowEffect.OutputSlots[0] = overlayEffect.InputHandles[1];
+        RainbowEffect rainbowEffect = new();
+        rainbowEffect.BindOutputs("colorBuffer", "colorBuffer", overlayEffect);
     }
 }
