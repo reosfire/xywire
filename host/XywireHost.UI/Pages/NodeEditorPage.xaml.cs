@@ -11,7 +11,7 @@ public partial class NodeEditorPage : ContentPage
         new("Color", new[] { "Value" }, new[] { "Color" }),
         new("Blend", new[] { "A", "B", "Factor" }, new[] { "Out" }),
         new("Time", Array.Empty<string>(), new[] { "Seconds" }),
-        new("Output", new[] { "Color" }, Array.Empty<string>())
+        new("Output", new[] { "Color" }, Array.Empty<string>()),
     };
 
     public NodeEditorPage()
@@ -52,7 +52,7 @@ public partial class NodeEditorPage : ContentPage
         }
 
         float offset = 30f * NodesView.Nodes.Count;
-        SKPoint position = new(40f + (offset % 240f), 80f + (offset % 160f));
+        SKPoint position = new(40f + offset % 240f, 80f + offset % 160f);
         NodesView.AddNode(definition, position);
     }
 
@@ -97,10 +97,7 @@ public partial class NodeEditorPage : ContentPage
         }
     }
 
-    private void OnClearSelectionClicked(object sender, EventArgs e)
-    {
-        NodesView.ClearSelection();
-    }
+    private void OnClearSelectionClicked(object sender, EventArgs e) => NodesView.ClearSelection();
 
     private void OnSelectionChanged(object? sender, EventArgs e)
     {

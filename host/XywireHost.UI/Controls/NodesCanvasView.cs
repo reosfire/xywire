@@ -13,55 +13,37 @@ public sealed class NodesCanvasView : SKCanvasView
     private const float MinNodeWidth = 150f;
 
     private readonly Dictionary<Guid, NodeLayout> _layouts = new();
-    private NodeDragState? _dragState;
 
-    private readonly SKPaint _titlePaint = new()
-    {
-        Color = SKColors.White,
-        TextSize = 15f,
-        IsAntialias = true
-    };
+    private readonly SKPaint _titlePaint = new() { Color = SKColors.White, TextSize = 15f, IsAntialias = true };
 
     private readonly SKPaint _textPaint = new()
     {
-        Color = new SKColor(220, 220, 220),
-        TextSize = 13f,
-        IsAntialias = true
+        Color = new SKColor(220, 220, 220), TextSize = 13f, IsAntialias = true,
     };
 
-    private readonly SKPaint _nodePaint = new()
-    {
-        Color = new SKColor(40, 40, 40),
-        IsAntialias = true
-    };
+    private readonly SKPaint _nodePaint = new() { Color = new SKColor(40, 40, 40), IsAntialias = true };
 
-    private readonly SKPaint _selectedNodePaint = new()
-    {
-        Color = new SKColor(60, 60, 60),
-        IsAntialias = true
-    };
+    private readonly SKPaint _selectedNodePaint = new() { Color = new SKColor(60, 60, 60), IsAntialias = true };
 
     private readonly SKPaint _nodeStrokePaint = new()
     {
-        Color = new SKColor(90, 90, 90),
-        IsAntialias = true,
-        Style = SKPaintStyle.Stroke,
-        StrokeWidth = 1f
+        Color = new SKColor(90, 90, 90), IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 1f,
     };
 
-    private readonly SKPaint _portPaint = new()
-    {
-        Color = new SKColor(160, 200, 255),
-        IsAntialias = true
-    };
+    private readonly SKPaint _portPaint = new() { Color = new SKColor(160, 200, 255), IsAntialias = true };
 
     private readonly SKPaint _connectionPaint = new()
     {
-        Color = new SKColor(140, 180, 255),
-        IsAntialias = true,
-        Style = SKPaintStyle.Stroke,
-        StrokeWidth = 2f
+        Color = new SKColor(140, 180, 255), IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 2f,
     };
+
+    private NodeDragState? _dragState;
+
+    public NodesCanvasView()
+    {
+        EnableTouchEvents = true;
+        Touch += OnTouch;
+    }
 
     public IList<NodeInstance> Nodes { get; } = new List<NodeInstance>();
     public IList<NodeConnection> Connections { get; } = new List<NodeConnection>();
@@ -71,12 +53,6 @@ public sealed class NodesCanvasView : SKCanvasView
     public Guid? SelectedNodeId { get; private set; }
 
     public event EventHandler? SelectionChanged;
-
-    public NodesCanvasView()
-    {
-        EnableTouchEvents = true;
-        Touch += OnTouch;
-    }
 
     public NodeInstance AddNode(NodeDefinition definition, SKPoint position)
     {
@@ -220,7 +196,8 @@ public sealed class NodesCanvasView : SKCanvasView
     {
         float titleWidth = _titlePaint.MeasureText(node.Title);
         float maxInputWidth = node.Inputs.Count == 0 ? 0f : node.Inputs.Max(input => _textPaint.MeasureText(input));
-        float maxOutputWidth = node.Outputs.Count == 0 ? 0f : node.Outputs.Max(output => _textPaint.MeasureText(output));
+        float maxOutputWidth =
+            node.Outputs.Count == 0 ? 0f : node.Outputs.Max(output => _textPaint.MeasureText(output));
 
         float leftColumnWidth = Math.Max(60f, maxInputWidth + 16f);
         float rightColumnWidth = Math.Max(60f, maxOutputWidth + 16f);
@@ -250,10 +227,12 @@ public sealed class NodesCanvasView : SKCanvasView
         return new NodeLayout(bounds, inputPorts, outputPorts);
     }
 
-    private void DrawPort(SKCanvas canvas, SKPoint position, NodePortReference? selectedPort, Guid nodeId, string portName, bool isInput)
+    private void DrawPort(SKCanvas canvas, SKPoint position, NodePortReference? selectedPort, Guid nodeId,
+        string portName, bool isInput)
     {
         float radius = PortRadius;
-        if (selectedPort is { } selected && selected.NodeId == nodeId && selected.PortName == portName && selected.IsInput == isInput)
+        if (selectedPort is { } selected && selected.NodeId == nodeId && selected.PortName == portName &&
+            selected.IsInput == isInput)
         {
             radius += 2f;
         }
@@ -380,7 +359,10 @@ public sealed class NodesCanvasView : SKCanvasView
         return dx * dx + dy * dy <= (PortRadius + 6f) * (PortRadius + 6f);
     }
 
-    private sealed record NodeLayout(SKRect Bounds, Dictionary<string, SKPoint> InputPorts, Dictionary<string, SKPoint> OutputPorts);
+    private sealed record NodeLayout(
+        SKRect Bounds,
+        Dictionary<string, SKPoint> InputPorts,
+        Dictionary<string, SKPoint> OutputPorts);
 
     private sealed record NodeDragState(Guid NodeId, SKPoint Offset);
 }

@@ -1,7 +1,7 @@
 ﻿using Microsoft.Extensions.Logging;
+using SkiaSharp.Views.Maui.Controls.Hosting;
 using XywireHost.Core.services;
 using XywireHost.UI.Pages;
-using SkiaSharp.Views.Maui.Controls.Hosting;
 
 namespace XywireHost.UI;
 
