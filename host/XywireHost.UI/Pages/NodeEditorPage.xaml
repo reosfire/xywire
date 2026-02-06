@@ -27,6 +27,8 @@
                         Clicked="OnDisconnectClicked" />
                 <Button Text="Clear Selection"
                         Clicked="OnClearSelectionClicked" />
+                <Button Text="Fit View"
+                        Clicked="OnFitViewClicked" />
             </HorizontalStackLayout>
         </VerticalStackLayout>
 

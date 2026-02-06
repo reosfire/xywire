@@ -99,6 +99,11 @@ public partial class NodeEditorPage : ContentPage
 
     private void OnClearSelectionClicked(object sender, EventArgs e) => NodesView.ClearSelection();
 
+    private void OnFitViewClicked(object sender, EventArgs e)
+    {
+        NodesView.FitToContent();
+    }
+
     private void OnSelectionChanged(object? sender, EventArgs e)
     {
         string nodeText = NodesView.SelectedNodeId is { } id ? id.ToString() : "none";
