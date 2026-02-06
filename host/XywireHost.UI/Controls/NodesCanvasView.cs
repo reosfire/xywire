@@ -159,19 +159,6 @@ public sealed class NodesCanvasView : SKCanvasView
 
             float titleBaseline = layout.Bounds.Top + NodePadding + HeaderHeight;
             canvas.DrawText(node.Title, layout.Bounds.Left + NodePadding, titleBaseline, _titlePaint);
-
-            foreach ((string portName, SKPoint position) in layout.InputPorts)
-            {
-                DrawPort(canvas, position, SelectedInput, node.Id, portName, true);
-                canvas.DrawText(portName, position.X + 10f, position.Y + 5f, _textPaint);
-            }
-
-            foreach ((string portName, SKPoint position) in layout.OutputPorts)
-            {
-                DrawPort(canvas, position, SelectedOutput, node.Id, portName, false);
-                float textWidth = _textPaint.MeasureText(portName);
-                canvas.DrawText(portName, position.X - 10f - textWidth, position.Y + 5f, _textPaint);
-            }
         }
 
         foreach (NodeConnection connection in Connections)
@@ -189,6 +176,24 @@ public sealed class NodesCanvasView : SKCanvasView
             }
 
             DrawConnection(canvas, start, end);
+        }
+
+        foreach (NodeInstance node in Nodes)
+        {
+            NodeLayout layout = _layouts[node.Id];
+            
+            foreach ((string portName, SKPoint position) in layout.InputPorts)
+            {
+                DrawPort(canvas, position, SelectedInput, node.Id, portName, true);
+                canvas.DrawText(portName, position.X + 10f, position.Y + 5f, _textPaint);
+            }
+
+            foreach ((string portName, SKPoint position) in layout.OutputPorts)
+            {
+                DrawPort(canvas, position, SelectedOutput, node.Id, portName, false);
+                float textWidth = _textPaint.MeasureText(portName);
+                canvas.DrawText(portName, position.X - 10f - textWidth, position.Y + 5f, _textPaint);
+            }
         }
     }
 
