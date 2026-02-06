@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:controls="clr-namespace:XywireHost.UI.Controls"
+             x:Class="XywireHost.UI.Pages.NodeEditorPage"
+             Title="Node Editor">
+
+    <Grid RowDefinitions="Auto,*,Auto" Padding="16" RowSpacing="12">
+        <VerticalStackLayout Grid.Row="0" Spacing="8">
+            <Label Text="Node Graph"
+                   FontSize="20"
+                   FontAttributes="Bold" />
+            <HorizontalStackLayout Spacing="8">
+                <Picker x:Name="NodePicker"
+                        Title="Add node"
+                        HorizontalOptions="FillAndExpand" />
+                <Button Text="Add"
+                        Clicked="OnAddNodeClicked" />
+                <Button Text="Remove"
+                        Clicked="OnRemoveNodeClicked" />
+            </HorizontalStackLayout>
+            <HorizontalStackLayout Spacing="8">
+                <Button Text="Connect"
+                        Clicked="OnConnectClicked" />
+                <Button Text="Disconnect"
+                        Clicked="OnDisconnectClicked" />
+                <Button Text="Clear Selection"
+                        Clicked="OnClearSelectionClicked" />
+            </HorizontalStackLayout>
+        </VerticalStackLayout>
+
+        <Border Grid.Row="1"
+                Stroke="#333333"
+                StrokeThickness="1"
+                StrokeShape="RoundRectangle 8"
+                Padding="0">
+            <controls:NodesCanvasView x:Name="NodesView" />
+        </Border>
+
+        <Label Grid.Row="2"
+               x:Name="SelectionLabel"
+               Text="Select ports or nodes to connect, move, or remove."
+               FontSize="12"
+               TextColor="Gray" />
+    </Grid>
+
+</ContentPage>

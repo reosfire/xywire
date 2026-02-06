@@ -58,6 +58,19 @@ public partial class MainPage : ContentPage
             await DisplayAlertAsync("Not Connected", "Please connect to a device first.", "OK");
         }
     }
+    
+    private async void OnNodeEditorClicked(object sender, EventArgs e)
+    {
+        if (_effectService.IsConnected)
+        {
+            NodeEditorPage page = _serviceProvider.GetRequiredService<NodeEditorPage>();
+            await Navigation.PushAsync(page);
+        }
+        else
+        {
+            await DisplayAlertAsync("Not Connected", "Please connect to a device first.", "OK");
+        }
+    }
 
     private void UpdateStatus()
     {

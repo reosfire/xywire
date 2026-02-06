@@ -1,6 +1,7 @@
 ﻿using Microsoft.Extensions.Logging;
 using XywireHost.Core.services;
 using XywireHost.UI.Pages;
+using SkiaSharp.Views.Maui.Controls.Hosting;
 
 namespace XywireHost.UI;
 
@@ -11,6 +12,7 @@ public static class MauiProgram
         MauiAppBuilder builder = MauiApp.CreateBuilder();
         builder
             .UseMauiApp<App>()
+            .UseSkiaSharp()
             .ConfigureFonts(fonts =>
             {
                 fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");
@@ -31,6 +33,7 @@ public static class MauiProgram
         builder.Services.AddTransient<DeviceSelectionPage>();
         builder.Services.AddTransient<EffectControlPage>();
         builder.Services.AddTransient<WiFiSetupPage>();
+        builder.Services.AddTransient<NodeEditorPage>();
 
         return builder.Build();
     }
