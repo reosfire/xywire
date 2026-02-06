@@ -21,12 +21,6 @@
                         Clicked="OnRemoveNodeClicked" />
             </HorizontalStackLayout>
             <HorizontalStackLayout Spacing="8">
-                <Button Text="Connect"
-                        Clicked="OnConnectClicked" />
-                <Button Text="Disconnect"
-                        Clicked="OnDisconnectClicked" />
-                <Button Text="Clear Selection"
-                        Clicked="OnClearSelectionClicked" />
                 <Button Text="Fit View"
                         Clicked="OnFitViewClicked" />
             </HorizontalStackLayout>
@@ -39,12 +33,6 @@
                 Padding="0">
             <controls:NodesCanvasView x:Name="NodesView" />
         </Border>
-
-        <Label Grid.Row="2"
-               x:Name="SelectionLabel"
-               Text="Select ports or nodes to connect, move, or remove."
-               FontSize="12"
-               TextColor="Gray" />
     </Grid>
 
 </ContentPage>

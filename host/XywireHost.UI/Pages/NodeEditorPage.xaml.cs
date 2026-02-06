@@ -7,11 +7,11 @@ public partial class NodeEditorPage : ContentPage
 {
     private readonly IReadOnlyList<NodeDefinition> _definitions = new List<NodeDefinition>
     {
-        new("Noise", Array.Empty<string>(), new[] { "Value" }),
-        new("Color", new[] { "Value" }, new[] { "Color" }),
-        new("Blend", new[] { "A", "B", "Factor" }, new[] { "Out" }),
-        new("Time", Array.Empty<string>(), new[] { "Seconds" }),
-        new("Output", new[] { "Color" }, Array.Empty<string>()),
+        new("Noise", [], ["Value"]),
+        new("Color", ["Value"], ["Color"]),
+        new("Blend", ["A", "B", "Factor"], ["Out"]),
+        new("Time", [], ["Seconds"]),
+        new("Output", ["Color"], []),
     };
 
     public NodeEditorPage()
@@ -23,8 +23,7 @@ public partial class NodeEditorPage : ContentPage
         {
             NodePicker.SelectedIndex = 0;
         }
-
-        NodesView.SelectionChanged += OnSelectionChanged;
+        
         SeedSampleGraph();
     }
 
@@ -67,49 +66,9 @@ public partial class NodeEditorPage : ContentPage
         NodesView.RemoveNode(nodeId);
     }
 
-    private async void OnConnectClicked(object sender, EventArgs e)
-    {
-        if (NodesView.SelectedOutput is not { } output || NodesView.SelectedInput is not { } input)
-        {
-            await DisplayAlert("Connect", "Select an output port and an input port.", "OK");
-            return;
-        }
-
-        bool added = NodesView.TryAddConnection(output, input);
-        if (!added)
-        {
-            await DisplayAlert("Connect", "Connection already exists or is invalid.", "OK");
-        }
-    }
-
-    private async void OnDisconnectClicked(object sender, EventArgs e)
-    {
-        if (NodesView.SelectedOutput is not { } output || NodesView.SelectedInput is not { } input)
-        {
-            await DisplayAlert("Disconnect", "Select an output port and an input port.", "OK");
-            return;
-        }
-
-        bool removed = NodesView.RemoveConnection(output, input);
-        if (!removed)
-        {
-            await DisplayAlert("Disconnect", "No matching connection found.", "OK");
-        }
-    }
-
-    private void OnClearSelectionClicked(object sender, EventArgs e) => NodesView.ClearSelection();
-
     private void OnFitViewClicked(object sender, EventArgs e)
     {
         NodesView.FitToContent();
-    }
-
-    private void OnSelectionChanged(object? sender, EventArgs e)
-    {
-        string nodeText = NodesView.SelectedNodeId is { } id ? id.ToString() : "none";
-        string outputText = NodesView.SelectedOutput is { } output ? output.PortName : "none";
-        string inputText = NodesView.SelectedInput is { } input ? input.PortName : "none";
-        SelectionLabel.Text = $"Selected node: {nodeText}, output: {outputText}, input: {inputText}";
     }
 
     private NodeDefinition? GetSelectedDefinition()

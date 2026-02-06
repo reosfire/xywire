@@ -33,7 +33,7 @@ public partial class MainPage : ContentPage
         {
             if (connected)
             {
-                EffectControlPage effectControlPage = _serviceProvider.GetRequiredService<EffectControlPage>();
+                NodeEditorPage effectControlPage = _serviceProvider.GetRequiredService<NodeEditorPage>();
                 await Navigation.PushAsync(effectControlPage);
             }
         };

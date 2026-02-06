@@ -54,11 +54,7 @@ public sealed class NodesCanvasView : SKCanvasView
     public IList<NodeInstance> Nodes { get; } = new List<NodeInstance>();
     public IList<NodeConnection> Connections { get; } = new List<NodeConnection>();
 
-    public NodePortReference? SelectedOutput { get; private set; }
-    public NodePortReference? SelectedInput { get; private set; }
     public Guid? SelectedNodeId { get; private set; }
-
-    public event EventHandler? SelectionChanged;
 
     public NodeInstance AddNode(NodeDefinition definition, SKPoint position)
     {
@@ -66,7 +62,6 @@ public sealed class NodesCanvasView : SKCanvasView
         Nodes.Add(node);
         SelectedNodeId = node.Id;
         InvalidateSurface();
-        SelectionChanged?.Invoke(this, EventArgs.Empty);
         return node;
     }
 
@@ -120,26 +115,22 @@ public sealed class NodesCanvasView : SKCanvasView
         for (int i = Connections.Count - 1; i >= 0; i--)
         {
             NodeConnection connection = Connections[i];
-            if (connection.FromNodeId == output.NodeId &&
-                connection.FromPort == output.PortName &&
-                connection.ToNodeId == input.NodeId &&
-                connection.ToPort == input.PortName)
-            {
-                Connections.RemoveAt(i);
-                InvalidateSurface();
-                return true;
-            }
+            if (connection.FromNodeId != output.NodeId ||
+                connection.FromPort != output.PortName ||
+                connection.ToNodeId != input.NodeId ||
+                connection.ToPort != input.PortName) continue;
+
+            Connections.RemoveAt(i);
+            InvalidateSurface();
+            return true;
         }
 
         return false;
     }
 
-    public void ClearSelection()
+    private void ClearSelection()
     {
-        SelectedOutput = null;
-        SelectedInput = null;
         SelectedNodeId = null;
-        SelectionChanged?.Invoke(this, EventArgs.Empty);
         InvalidateSurface();
     }
 
@@ -202,6 +193,19 @@ public sealed class NodesCanvasView : SKCanvasView
 
             float titleBaseline = layout.Bounds.Top + NodePadding + HeaderHeight;
             canvas.DrawText(node.Title, layout.Bounds.Left + NodePadding, titleBaseline, _titlePaint);
+
+            foreach ((string portName, SKPoint position) in layout.InputPorts)
+            {
+                DrawPort(canvas, position);
+                canvas.DrawText(portName, position.X + 10f, position.Y + 5f, _textPaint);
+            }
+
+            foreach ((string portName, SKPoint position) in layout.OutputPorts)
+            {
+                DrawPort(canvas, position);
+                float textWidth = _textPaint.MeasureText(portName);
+                canvas.DrawText(portName, position.X - 10f - textWidth, position.Y + 5f, _textPaint);
+            }
         }
 
         foreach (NodeConnection connection in Connections)
@@ -224,24 +228,6 @@ public sealed class NodesCanvasView : SKCanvasView
         if (_connectionDrag is { } drag && TryGetPortPosition(drag.StartPort, out SKPoint startPosition))
         {
             DrawConnection(canvas, startPosition, drag.CurrentWorld);
-        }
-
-        foreach (NodeInstance node in Nodes)
-        {
-            NodeLayout layout = _layouts[node.Id];
-            
-            foreach ((string portName, SKPoint position) in layout.InputPorts)
-            {
-                DrawPort(canvas, position, SelectedInput, node.Id, portName, true);
-                canvas.DrawText(portName, position.X + 10f, position.Y + 5f, _textPaint);
-            }
-
-            foreach ((string portName, SKPoint position) in layout.OutputPorts)
-            {
-                DrawPort(canvas, position, SelectedOutput, node.Id, portName, false);
-                float textWidth = _textPaint.MeasureText(portName);
-                canvas.DrawText(portName, position.X - 10f - textWidth, position.Y + 5f, _textPaint);
-            }
         }
     }
 
@@ -280,18 +266,7 @@ public sealed class NodesCanvasView : SKCanvasView
         return new NodeLayout(bounds, inputPorts, outputPorts);
     }
 
-    private void DrawPort(SKCanvas canvas, SKPoint position, NodePortReference? selectedPort, Guid nodeId,
-        string portName, bool isInput)
-    {
-        float radius = PortRadius;
-        if (selectedPort is { } selected && selected.NodeId == nodeId && selected.PortName == portName &&
-            selected.IsInput == isInput)
-        {
-            radius += 2f;
-        }
-
-        canvas.DrawCircle(position, radius, _portPaint);
-    }
+    private void DrawPort(SKCanvas canvas, SKPoint position) => canvas.DrawCircle(position, PortRadius, _portPaint);
 
     private void DrawConnection(SKCanvas canvas, SKPoint start, SKPoint end)
     {
@@ -306,112 +281,91 @@ public sealed class NodesCanvasView : SKCanvasView
 
     private void OnTouch(object? sender, SKTouchEventArgs e)
     {
-        if (e.ActionType == SKTouchAction.WheelChanged)
+        switch (e.ActionType)
         {
-            float zoomFactor = (float)Math.Pow(1.1f, e.WheelDelta / 120f);
-            float newZoom = Clamp(_zoom * zoomFactor, MinZoom, MaxZoom);
-            if (Math.Abs(newZoom - _zoom) > 0.0001f)
-            {
-                SKPoint worldBefore = ScreenToWorld(e.Location);
-                _zoom = newZoom;
-                _cameraOffset = new SKPoint(e.Location.X / _zoom - worldBefore.X, e.Location.Y / _zoom - worldBefore.Y);
-                InvalidateSurface();
-            }
-
-            e.Handled = true;
-            return;
-        }
-
-        if (e.ActionType == SKTouchAction.Pressed)
-        {
-            SKPoint worldLocation = ScreenToWorld(e.Location);
-            if (TryHitPort(worldLocation, out NodePortReference port))
-            {
-                if (port.IsInput)
+            case SKTouchAction.WheelChanged:
                 {
-                    SelectedInput = port;
-                }
-                else
-                {
-                    SelectedOutput = port;
-                }
+                    float zoomFactor = (float)Math.Pow(1.1f, e.WheelDelta / 120f);
+                    float newZoom = Clamp(_zoom * zoomFactor, MinZoom, MaxZoom);
+                    if (Math.Abs(newZoom - _zoom) > 0.0001f)
+                    {
+                        SKPoint worldBefore = ScreenToWorld(e.Location);
+                        _zoom = newZoom;
+                        _cameraOffset = new SKPoint(e.Location.X / _zoom - worldBefore.X,
+                            e.Location.Y / _zoom - worldBefore.Y);
+                    }
 
-                SelectedNodeId = port.NodeId;
+                    e.Handled = true;
+                    break;
+                }
+            case SKTouchAction.Pressed:
+                {
+                    SKPoint worldLocation = ScreenToWorld(e.Location);
+                    if (TryHitPort(worldLocation, out NodePortReference port))
+                    {
+                        SelectedNodeId = port.NodeId;
+                        _dragState = null;
+                        _panState = null;
+                        _connectionDrag = new ConnectionDragState(port, worldLocation);
+                        e.Handled = true;
+                    }
+                    else if (TryHitNode(worldLocation, out Guid nodeId, out SKPoint nodeOrigin))
+                    {
+                        SelectedNodeId = nodeId;
+                        _dragState = new NodeDragState(nodeId, worldLocation - nodeOrigin);
+                        e.Handled = true;
+                    }
+                    else
+                    {
+                        ClearSelection();
+                        _panState = new PanDragState(e.Location, _cameraOffset);
+                        e.Handled = true;
+                    }
+
+                    break;
+                }
+            case SKTouchAction.Moved when _connectionDrag is { } drag:
+                {
+                    _connectionDrag = drag with { CurrentWorld = ScreenToWorld(e.Location) };
+                    e.Handled = true;
+                    break;
+                }
+            case SKTouchAction.Moved when _dragState is { } dragNode:
+                {
+                    NodeInstance? node = Nodes.FirstOrDefault(n => n.Id == dragNode.NodeId);
+                    node?.Position = ScreenToWorld(e.Location) - dragNode.Offset;
+
+                    e.Handled = true;
+                    break;
+                }
+            case SKTouchAction.Moved when _panState is { } pan:
+                {
+                    SKPoint deltaScreen = e.Location - pan.StartScreen;
+                    _cameraOffset = pan.StartOffset + new SKPoint(deltaScreen.X / _zoom, deltaScreen.Y / _zoom);
+                    e.Handled = true;
+                    break;
+                }
+            case SKTouchAction.Released or SKTouchAction.Cancelled when
+                _connectionDrag is { } releasedDrag:
+                {
+                    SKPoint worldLocation = ScreenToWorld(e.Location);
+                    if (TryHitPort(worldLocation, out NodePortReference targetPort))
+                    {
+                        ToggleConnection(releasedDrag.StartPort, targetPort);
+                    }
+
+                    _connectionDrag = null;
+                    e.Handled = true;
+                    break;
+                }
+            case SKTouchAction.Released or SKTouchAction.Cancelled:
                 _dragState = null;
                 _panState = null;
-                _connectionDrag = new ConnectionDragState(port, worldLocation);
-                SelectionChanged?.Invoke(this, EventArgs.Empty);
-                InvalidateSurface();
                 e.Handled = true;
-                return;
-            }
-
-            if (TryHitNode(worldLocation, out Guid nodeId, out SKPoint nodeOrigin))
-            {
-                SelectedNodeId = nodeId;
-                _dragState = new NodeDragState(nodeId, worldLocation - nodeOrigin);
-                SelectionChanged?.Invoke(this, EventArgs.Empty);
-                InvalidateSurface();
-                e.Handled = true;
-                return;
-            }
-
-            ClearSelection();
-            _panState = new PanDragState(e.Location, _cameraOffset);
-            e.Handled = true;
-            return;
+                break;
         }
-
-        if (e.ActionType == SKTouchAction.Moved && _connectionDrag is { } drag)
-        {
-            _connectionDrag = drag with { CurrentWorld = ScreenToWorld(e.Location) };
-            InvalidateSurface();
-            e.Handled = true;
-            return;
-        }
-
-        if (e.ActionType == SKTouchAction.Moved && _dragState is { } dragNode)
-        {
-            NodeInstance? node = Nodes.FirstOrDefault(n => n.Id == dragNode.NodeId);
-            if (node != null)
-            {
-                node.Position = ScreenToWorld(e.Location) - dragNode.Offset;
-                InvalidateSurface();
-            }
-
-            e.Handled = true;
-            return;
-        }
-
-        if (e.ActionType == SKTouchAction.Moved && _panState is { } pan)
-        {
-            SKPoint deltaScreen = e.Location - pan.StartScreen;
-            _cameraOffset = pan.StartOffset + new SKPoint(deltaScreen.X / _zoom, deltaScreen.Y / _zoom);
-            InvalidateSurface();
-            e.Handled = true;
-            return;
-        }
-
-        if ((e.ActionType == SKTouchAction.Released || e.ActionType == SKTouchAction.Cancelled) &&
-            _connectionDrag is { } releasedDrag)
-        {
-            SKPoint worldLocation = ScreenToWorld(e.Location);
-            if (TryHitPort(worldLocation, out NodePortReference targetPort))
-            {
-                ToggleConnection(releasedDrag.StartPort, targetPort);
-            }
-
-            _connectionDrag = null;
-            e.Handled = true;
-            return;
-        }
-
-        if (e.ActionType == SKTouchAction.Released || e.ActionType == SKTouchAction.Cancelled)
-        {
-            _dragState = null;
-            _panState = null;
-            e.Handled = true;
-        }
+        
+        InvalidateSurface();
     }
 
     private bool TryHitNode(SKPoint location, out Guid nodeId, out SKPoint nodeOrigin)
@@ -473,12 +427,7 @@ public sealed class NodesCanvasView : SKCanvasView
             return false;
         }
 
-        if (RemoveConnection(output, input))
-        {
-            return true;
-        }
-
-        return TryAddConnection(output, input);
+        return RemoveConnection(output, input) || TryAddConnection(output, input);
     }
 
     private bool TryGetPortPosition(NodePortReference port, out SKPoint position)
@@ -513,15 +462,14 @@ public sealed class NodesCanvasView : SKCanvasView
         return value > max ? max : value;
     }
 
-    private SKPoint ScreenToWorld(SKPoint screen)
-    {
-        return new SKPoint(screen.X / _zoom - _cameraOffset.X, screen.Y / _zoom - _cameraOffset.Y);
-    }
+    private SKPoint ScreenToWorld(SKPoint screen) =>
+        new(screen.X / _zoom - _cameraOffset.X, screen.Y / _zoom - _cameraOffset.Y);
 
     private sealed record NodeLayout(
         SKRect Bounds,
         Dictionary<string, SKPoint> InputPorts,
-        Dictionary<string, SKPoint> OutputPorts);
+        Dictionary<string, SKPoint> OutputPorts
+    );
 
     private sealed record NodeDragState(Guid NodeId, SKPoint Offset);
 
@@ -530,53 +478,28 @@ public sealed class NodesCanvasView : SKCanvasView
     private sealed record ConnectionDragState(NodePortReference StartPort, SKPoint CurrentWorld);
 }
 
-public sealed class NodeDefinition
+public sealed class NodeDefinition(string name, IReadOnlyList<string> inputs, IReadOnlyList<string> outputs)
 {
-    public NodeDefinition(string name, IReadOnlyList<string> inputs, IReadOnlyList<string> outputs)
-    {
-        Name = name;
-        Inputs = inputs;
-        Outputs = outputs;
-    }
-
-    public string Name { get; }
-    public IReadOnlyList<string> Inputs { get; }
-    public IReadOnlyList<string> Outputs { get; }
+    public string Name { get; } = name;
+    public IReadOnlyList<string> Inputs { get; } = inputs;
+    public IReadOnlyList<string> Outputs { get; } = outputs;
 }
 
-public sealed class NodeInstance
+public sealed class NodeInstance(NodeDefinition definition, SKPoint position)
 {
-    public NodeInstance(NodeDefinition definition, SKPoint position)
-    {
-        Id = Guid.NewGuid();
-        Title = definition.Name;
-        Inputs = definition.Inputs;
-        Outputs = definition.Outputs;
-        Position = position;
-    }
-
-    public Guid Id { get; }
-    public string Title { get; }
-    public IReadOnlyList<string> Inputs { get; }
-    public IReadOnlyList<string> Outputs { get; }
-    public SKPoint Position { get; set; }
+    public Guid Id { get; } = Guid.NewGuid();
+    public string Title { get; } = definition.Name;
+    public IReadOnlyList<string> Inputs { get; } = definition.Inputs;
+    public IReadOnlyList<string> Outputs { get; } = definition.Outputs;
+    public SKPoint Position { get; set; } = position;
 }
 
-public sealed class NodeConnection
+public sealed class NodeConnection(Guid fromNodeId, string fromPort, Guid toNodeId, string toPort)
 {
-    public NodeConnection(Guid fromNodeId, string fromPort, Guid toNodeId, string toPort)
-    {
-        FromNodeId = fromNodeId;
-        FromPort = fromPort;
-        ToNodeId = toNodeId;
-        ToPort = toPort;
-    }
-
-    public Guid FromNodeId { get; }
-    public string FromPort { get; }
-    public Guid ToNodeId { get; }
-    public string ToPort { get; }
+    public Guid FromNodeId { get; } = fromNodeId;
+    public string FromPort { get; } = fromPort;
+    public Guid ToNodeId { get; } = toNodeId;
+    public string ToPort { get; } = toPort;
 }
 
 public readonly record struct NodePortReference(Guid NodeId, string PortName, bool IsInput);
-
