@@ -1,22 +1,33 @@
 using SkiaSharp;
+using XywireHost.Core;
+using XywireHost.Core.Graph;
+using XywireHost.Core.services;
 using XywireHost.UI.Controls;
 
 namespace XywireHost.UI.Pages;
 
 public partial class NodeEditorPage : ContentPage
 {
-    private readonly IReadOnlyList<NodeDefinition> _definitions = new List<NodeDefinition>
-    {
-        new("Noise", [], ["Value"]),
-        new("Color", ["Value"], ["Color"]),
-        new("Blend", ["A", "B", "Factor"], ["Out"]),
-        new("Time", [], ["Seconds"]),
-        new("Output", ["Color"], []),
-    };
+    private readonly EffectService _effectService;
+    
+    private readonly IReadOnlyList<NodeDefinition> _definitions;
+    private readonly Dictionary<string, NodeDefinition> _definitionsByTypeId;
 
-    public NodeEditorPage()
+    public NodeEditorPage(EffectService effectService)
     {
+        _effectService = effectService;
+        
         InitializeComponent();
+
+        _definitions = EffectNodeCatalog.All
+            .Select(descriptor => new NodeDefinition(
+                descriptor.TypeId,
+                descriptor.DisplayName,
+                descriptor.Inputs,
+                descriptor.Outputs))
+            .ToList();
+
+        _definitionsByTypeId = _definitions.ToDictionary(definition => definition.TypeId);
 
         NodePicker.ItemsSource = _definitions.Select(definition => definition.Name).ToList();
         if (NodePicker.ItemsSource.Count > 0)
@@ -29,16 +40,26 @@ public partial class NodeEditorPage : ContentPage
 
     private void SeedSampleGraph()
     {
-        NodeInstance noise = NodesView.AddNode(_definitions[0], new SKPoint(40, 40));
-        NodeInstance color = NodesView.AddNode(_definitions[1], new SKPoint(280, 40));
-        NodeInstance output = NodesView.AddNode(_definitions[4], new SKPoint(520, 60));
+        if (!TryGetDefinition("ConstantInt", out NodeDefinition? constantInt) ||
+            !TryGetDefinition("Rainbow", out NodeDefinition? rainbow))
+        {
+            return;
+        }
+
+        NodeInstance width = NodesView.AddNode(constantInt, new SKPoint(40, 40));
+        NodeInstance height = NodesView.AddNode(constantInt, new SKPoint(40, 160));
+        NodeInstance fps = NodesView.AddNode(constantInt, new SKPoint(40, 280));
+        NodeInstance output = NodesView.AddNode(rainbow, new SKPoint(320, 120));
 
         NodesView.TryAddConnection(
-            new NodePortReference(noise.Id, "Value", false),
-            new NodePortReference(color.Id, "Value", true));
+            new NodePortReference(width.Id, "value", false),
+            new NodePortReference(output.Id, "width", true));
         NodesView.TryAddConnection(
-            new NodePortReference(color.Id, "Color", false),
-            new NodePortReference(output.Id, "Color", true));
+            new NodePortReference(height.Id, "value", false),
+            new NodePortReference(output.Id, "height", true));
+        NodesView.TryAddConnection(
+            new NodePortReference(fps.Id, "value", false),
+            new NodePortReference(output.Id, "fps", true));
     }
 
     private async void OnAddNodeClicked(object sender, EventArgs e)
@@ -70,6 +91,58 @@ public partial class NodeEditorPage : ContentPage
     {
         NodesView.FitToContent();
     }
+
+    private async void OnCompileGraphClicked(object sender, EventArgs e)
+    {
+        EffectGraphModel model = BuildGraphModel();
+        EffectGraphCompilationResult result = EffectGraphCompiler.Compile(model, new EffectContext());
+
+        if (result.Success)
+        {
+            await DisplayAlert("Compile Graph", "Graph compiled successfully.", "OK");
+            return;
+        }
+
+        string errors = string.Join(Environment.NewLine, result.Errors);
+        await DisplayAlert("Compile Graph", errors, "OK");
+    }
+
+    private EffectGraphModel BuildGraphModel()
+    {
+        EffectGraphModel model = new();
+
+        foreach (NodeInstance node in NodesView.Nodes)
+        {
+            // TODO probably rewriting can be started from here.
+            object? data = node.TypeId switch
+            {
+                "ConstantInt" => 14,
+                "LedLine" => _effectService.ConnectedLedLine,
+                _ => null,
+            };
+
+            model.Nodes.Add(new EffectGraphNode(
+                node.Id,
+                node.TypeId,
+                node.Position.X,
+                node.Position.Y,
+                data));
+        }
+
+        foreach (NodeConnection connection in NodesView.Connections)
+        {
+            model.Connections.Add(new EffectGraphConnection(
+                connection.FromNodeId,
+                connection.FromPort,
+                connection.ToNodeId,
+                connection.ToPort));
+        }
+
+        return model;
+    }
+
+    private bool TryGetDefinition(string typeId, out NodeDefinition? definition) =>
+        _definitionsByTypeId.TryGetValue(typeId, out definition);
 
     private NodeDefinition? GetSelectedDefinition()
     {

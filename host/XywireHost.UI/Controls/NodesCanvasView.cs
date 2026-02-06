@@ -474,8 +474,9 @@ public sealed class NodesCanvasView : SKCanvasView
     private sealed record ConnectionDragState(NodePortReference StartPort, SKPoint CurrentWorld) : IDragState;
 }
 
-public sealed class NodeDefinition(string name, IReadOnlyList<string> inputs, IReadOnlyList<string> outputs)
+public sealed class NodeDefinition(string typeId, string name, IReadOnlyList<string> inputs, IReadOnlyList<string> outputs)
 {
+    public string TypeId { get; } = typeId;
     public string Name { get; } = name;
     public IReadOnlyList<string> Inputs { get; } = inputs;
     public IReadOnlyList<string> Outputs { get; } = outputs;
@@ -484,6 +485,7 @@ public sealed class NodeDefinition(string name, IReadOnlyList<string> inputs, IR
 public sealed class NodeInstance(NodeDefinition definition, SKPoint position)
 {
     public Guid Id { get; } = Guid.NewGuid();
+    public string TypeId { get; } = definition.TypeId;
     public string Title { get; } = definition.Name;
     public IReadOnlyList<string> Inputs { get; } = definition.Inputs;
     public IReadOnlyList<string> Outputs { get; } = definition.Outputs;

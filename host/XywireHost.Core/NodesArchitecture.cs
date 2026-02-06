@@ -18,18 +18,28 @@ public interface IEffectContext
     Scheduler Scheduler { get; }
 }
 
-internal class EffectContext : IEffectContext
+public interface IEffectNodeInstance
+{
+    IReadOnlyDictionary<string, IUntypedInputHandle> Inputs { get; }
+    IReadOnlyDictionary<string, IUntypedOutputSlot> Outputs { get; }
+    void Initialize(IEffectContext context);
+}
+
+public class EffectContext : IEffectContext
 {
     public Scheduler Scheduler { get; } = new();
 }
 
-internal abstract class BaseEffect : IDataSource, IDataSink
+public abstract class BaseEffect : IDataSource, IDataSink, IEffectNodeInstance
 {
     private readonly EffectOutputsCollection _outputs = new();
     private readonly EffectInputsCollection _inputs = new();
     public IEffectInputsCollection InputHandles => _inputs;
 
     public IEffectOutputsCollection OutputSlots => _outputs;
+
+    public IReadOnlyDictionary<string, IUntypedInputHandle> Inputs => _inputs.Entries;
+    public IReadOnlyDictionary<string, IUntypedOutputSlot> Outputs => _outputs.Entries;
 
     public void BindOutputs(string outputSlotName, string inputHandleName, BaseEffect targetEffect)
     {
@@ -41,7 +51,7 @@ internal abstract class BaseEffect : IDataSource, IDataSink
     public void BindOutputs(string outputSlotName, string inputHandleName, LedLineNode targetEffect)
     {
         IUntypedOutputSlot outputSlot = _outputs._container[outputSlotName];
-        IUntypedInputHandle inputHandle = targetEffect.Inputs._container[inputHandleName];
+        IUntypedInputHandle inputHandle = targetEffect._inputs._container[inputHandleName];
         BindOutputs(outputSlot, inputHandle);
     }
 
@@ -64,20 +74,30 @@ internal abstract class BaseEffect : IDataSource, IDataSink
     }
 }
 
-internal class LedLineNode : IDataSink
+public sealed class LedLineNode : IDataSink, IEffectNodeInstance
 {
-    internal readonly EffectInputsCollection Inputs = new();
+    internal readonly EffectInputsCollection _inputs = new();
+
+    private static readonly IReadOnlyDictionary<string, IUntypedOutputSlot> EmptyOutputs =
+        new Dictionary<string, IUntypedOutputSlot>();
 
     private readonly LedLine _ledLine;
     
     public LedLineNode(LedLine ledLine)
     {
-        Inputs.RegisterInput<IReadOnlyBuffer2D<Color>>("colorBuffer", SetColorBuffer);
+        _inputs.RegisterInput<IReadOnlyBuffer2D<Color>>("colorBuffer", SetColorBuffer);
         
         _ledLine = ledLine;
     }
 
-    public IEffectInputsCollection InputHandles => Inputs;
+    public IEffectInputsCollection InputHandles => _inputs;
+
+    public IReadOnlyDictionary<string, IUntypedInputHandle> Inputs => _inputs.Entries;
+    public IReadOnlyDictionary<string, IUntypedOutputSlot> Outputs => EmptyOutputs;
+
+    public void Initialize(IEffectContext context)
+    {
+    }
 
     // TODO actually it should accept 1D buffer
     private void SetColorBuffer(IReadOnlyBuffer2D<Color> buffer)
@@ -96,7 +116,7 @@ internal class LedLineNode : IDataSink
     }
 }
 
-internal interface IUntypedOutputSlot
+public interface IUntypedOutputSlot
 {
     string Id { get; }
     Type SetValueType { get; }
@@ -105,12 +125,12 @@ internal interface IUntypedOutputSlot
     void SetSetValue(Delegate setValue);
 }
 
-internal interface IUntypedInputHandle
+public interface IUntypedInputHandle
 {
     string Id { get; }
     Type SetValueType { get; }
     Type ValueType { get; }
-    internal bool IsConnected { get; set; }
+    bool IsConnected { get; set; }
     Delegate GetSetValue();
 }
 
@@ -136,9 +156,7 @@ public class OutputSlot<T>(string id) : IUntypedOutputSlot
 
     public void Invoke(T value)
     {
-        if (_setValueDelegate == null)
-            throw new InvalidOperationException($"Output slot {Id} is not connected to any input.");
-        _setValueDelegate!.Invoke(value);
+        _setValueDelegate?.Invoke(value);
     }
 }
 
@@ -168,6 +186,8 @@ internal class EffectInputsCollection : IEffectInputsCollection
 {
     internal Dictionary<string, IUntypedInputHandle> _container = new();
 
+    public IReadOnlyDictionary<string, IUntypedInputHandle> Entries => _container;
+
     public void RegisterInput<T>(string name, Action<T> callback) =>
         _container[name] = new InputHandle<T>(name, callback);
 }
@@ -175,6 +195,8 @@ internal class EffectInputsCollection : IEffectInputsCollection
 internal class EffectOutputsCollection : IEffectOutputsCollection
 {
     internal Dictionary<string, IUntypedOutputSlot> _container = new();
+
+    public IReadOnlyDictionary<string, IUntypedOutputSlot> Entries => _container;
 
     public OutputSlot<T> RegisterOutput<T>(string name)
     {
@@ -359,6 +381,7 @@ internal class RainbowEffect : BaseEffect
         _renderTaskHandle?.Stop();
         
         if (_width <= 0 || _height <= 0 || _fps <= 0) return;
+        if (_context == null) return;
         
         _colorBuffer = new Buffer2D<Color>(_height, _width);
         _renderTaskHandle = _context!.Scheduler.ScheduleTask(Render, _fps);

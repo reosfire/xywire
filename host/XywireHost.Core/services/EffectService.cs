@@ -9,10 +9,10 @@ namespace XywireHost.Core.services;
 public class EffectService
 {
     private AbstractEffect? _currentEffect;
-    private LedLine? _ledLine;
 
-    public bool IsConnected => _ledLine != null;
+    public bool IsConnected => ConnectedLedLine != null;
     public bool IsEffectRunning => _currentEffect != null;
+    public LedLine? ConnectedLedLine { get; private set; }
 
     public static List<EffectInfo> GetAvailableEffects()
     {
@@ -49,8 +49,8 @@ public class EffectService
     public async Task ConnectToDevice(string ipAddress)
     {
         DisconnectFromDevice();
-        _ledLine = new LedLine(ipAddress);
-        await _ledLine.SendClearPacket();
+        ConnectedLedLine = new LedLine(ipAddress);
+        await ConnectedLedLine.SendClearPacket();
     }
 
     public void DisconnectFromDevice()
@@ -58,29 +58,29 @@ public class EffectService
         _currentEffect?.StopLooping();
         _currentEffect = null;
 
-        _ledLine?.Dispose();
-        _ledLine = null;
+        ConnectedLedLine?.Dispose();
+        ConnectedLedLine = null;
     }
 
     public async Task StartEffect(EffectInfo effectInfo)
     {
-        if (_ledLine == null)
+        if (ConnectedLedLine == null)
             throw new InvalidOperationException("No device connected");
 
         await StopCurrentEffect();
-        _currentEffect = effectInfo.Factory(_ledLine);
+        _currentEffect = effectInfo.Factory(ConnectedLedLine);
         _currentEffect.StartLooping();
     }
 
     public async Task StopCurrentEffect()
     {
         _currentEffect?.StopLooping();
-        Task? clearTask = _ledLine?.SendClearPacket();
+        Task? clearTask = ConnectedLedLine?.SendClearPacket();
         if (clearTask != null) await clearTask;
         _currentEffect = null;
     }
 
-    public Task? SetBrightness(byte brightness) => _ledLine?.SendBrightnessPacket(brightness);
+    public Task? SetBrightness(byte brightness) => ConnectedLedLine?.SendBrightnessPacket(brightness);
 }
 
 public class EffectInfo(string name, Func<LedLine, AbstractEffect> factory)
