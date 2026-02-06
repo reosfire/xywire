@@ -39,9 +39,7 @@ public sealed class NodesCanvasView : SKCanvasView
         Color = new SKColor(140, 180, 255), IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 2f,
     };
 
-    private NodeDragState? _nodeDragState;
-    private PanDragState? _panDragState;
-    private ConnectionDragState? _connectionDragState;
+    private IDragState? _currentDragState;
 
     private SKPoint _cameraOffset = new(0f, 0f);
     private float _zoom = 1f;
@@ -226,7 +224,8 @@ public sealed class NodesCanvasView : SKCanvasView
             DrawConnection(canvas, start, end);
         }
 
-        if (_connectionDragState is { } drag && TryGetPortPosition(drag.StartPort, out SKPoint startPosition))
+        if (_currentDragState is ConnectionDragState drag &&
+            TryGetPortPosition(drag.StartPort, out SKPoint startPosition))
         {
             DrawConnection(canvas, startPosition, drag.CurrentWorld);
         }
@@ -305,57 +304,55 @@ public sealed class NodesCanvasView : SKCanvasView
                     if (TryHitPort(worldLocation, out NodePortReference port))
                     {
                         SelectedNodeId = port.NodeId;
-                        _nodeDragState = null;
-                        _panDragState = null;
-                        _connectionDragState = new ConnectionDragState(port, worldLocation);
+                        _currentDragState = new ConnectionDragState(port, worldLocation);
                     }
                     else if (TryHitNode(worldLocation, out Guid nodeId, out SKPoint nodeOrigin))
                     {
                         SelectedNodeId = nodeId;
-                        _nodeDragState = new NodeDragState(nodeId, worldLocation - nodeOrigin);
+                        _currentDragState = new NodeDragState(nodeId, worldLocation - nodeOrigin);
                     }
                     else
                     {
                         ClearSelection();
-                        _panDragState = new PanDragState(e.Location, _cameraOffset);
+                        _currentDragState = new PanDragState(e.Location, _cameraOffset);
                     }
 
                     break;
                 }
-            case SKTouchAction.Moved when _connectionDragState is { } drag:
+            case SKTouchAction.Moved when _currentDragState is ConnectionDragState connectionDrag:
                 {
-                    _connectionDragState = drag with { CurrentWorld = ScreenToWorld(e.Location) };
+                    _currentDragState = connectionDrag with { CurrentWorld = ScreenToWorld(e.Location) };
                     break;
                 }
-            case SKTouchAction.Moved when _nodeDragState is { } dragNode:
+            case SKTouchAction.Moved when _currentDragState is NodeDragState nodeDrag:
                 {
-                    NodeInstance? node = Nodes.FirstOrDefault(n => n.Id == dragNode.NodeId);
-                    node?.Position = ScreenToWorld(e.Location) - dragNode.Offset;
+                    NodeInstance? node = Nodes.FirstOrDefault(n => n.Id == nodeDrag.NodeId);
+                    node?.Position = ScreenToWorld(e.Location) - nodeDrag.Offset;
 
                     break;
                 }
-            case SKTouchAction.Moved when _panDragState is { } pan:
+            case SKTouchAction.Moved when _currentDragState is PanDragState panDrag:
                 {
-                    SKPoint deltaScreen = e.Location - pan.StartScreen;
-                    _cameraOffset = pan.StartOffset + new SKPoint(deltaScreen.X / _zoom, deltaScreen.Y / _zoom);
+                    SKPoint deltaScreen = e.Location - panDrag.StartScreen;
+                    _cameraOffset = panDrag.StartOffset + deltaScreen / _zoom;
+
                     break;
                 }
             case SKTouchAction.Released or SKTouchAction.Cancelled when
-                _connectionDragState is { } releasedDrag:
+                _currentDragState is ConnectionDragState releasedConnectionDrag:
                 {
                     SKPoint worldLocation = ScreenToWorld(e.Location);
                     if (TryHitPort(worldLocation, out NodePortReference targetPort))
                     {
-                        ToggleConnection(releasedDrag.StartPort, targetPort);
+                        ToggleConnection(releasedConnectionDrag.StartPort, targetPort);
                     }
 
-                    _connectionDragState = null;
+                    _currentDragState = null;
                     break;
                 }
             case SKTouchAction.Released or SKTouchAction.Cancelled:
                 {
-                    _nodeDragState = null;
-                    _panDragState = null;
+                    _currentDragState = null;
                     break;
                 }
             default:
@@ -415,22 +412,16 @@ public sealed class NodesCanvasView : SKCanvasView
         return false;
     }
 
-    private bool ToggleConnection(NodePortReference a, NodePortReference b)
+    private void ToggleConnection(NodePortReference a, NodePortReference b)
     {
-        if (a.NodeId == b.NodeId && a.PortName == b.PortName && a.IsInput == b.IsInput)
-        {
-            return false;
-        }
+        if (a.NodeId == b.NodeId) return;
 
         NodePortReference output = a.IsInput ? b : a;
         NodePortReference input = a.IsInput ? a : b;
 
-        if (output.IsInput || !input.IsInput)
-        {
-            return false;
-        }
-
-        return RemoveConnection(output, input) || TryAddConnection(output, input);
+        if (output.IsInput || !input.IsInput) return;
+        
+        if (!RemoveConnection(output, input)) TryAddConnection(output, input);
     }
 
     private bool TryGetPortPosition(NodePortReference port, out SKPoint position)
@@ -474,11 +465,13 @@ public sealed class NodesCanvasView : SKCanvasView
         Dictionary<string, SKPoint> OutputPorts
     );
 
-    private sealed record NodeDragState(Guid NodeId, SKPoint Offset);
+    private interface IDragState;
 
-    private sealed record PanDragState(SKPoint StartScreen, SKPoint StartOffset);
+    private sealed record NodeDragState(Guid NodeId, SKPoint Offset) : IDragState;
 
-    private sealed record ConnectionDragState(NodePortReference StartPort, SKPoint CurrentWorld);
+    private sealed record PanDragState(SKPoint StartScreen, SKPoint StartOffset) : IDragState;
+
+    private sealed record ConnectionDragState(NodePortReference StartPort, SKPoint CurrentWorld) : IDragState;
 }
 
 public sealed class NodeDefinition(string name, IReadOnlyList<string> inputs, IReadOnlyList<string> outputs)
