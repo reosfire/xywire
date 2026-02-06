@@ -82,16 +82,17 @@ internal class LedLineNode : IDataSink
     // TODO actually it should accept 1D buffer
     private void SetColorBuffer(IReadOnlyBuffer2D<Color> buffer)
     {
+        Color[][] colors = new Color[buffer.Rows][];
         for (int row = 0; row < buffer.Rows; row++)
         {
+            colors[row] = new Color[buffer.Cols];
             for (int col = 0; col < buffer.Cols; col++)
             {
-                Color color = buffer[new Index2D(row, col)];
-                Console.Write(color);
+                colors[row][col] = buffer[new Index2D(row, col)];
             }
-
-            Console.WriteLine();
         }
+        
+        _ledLine.SetColors(colors);
     }
 }
 
@@ -220,6 +221,17 @@ internal readonly struct Buffer2D<T> : IReadOnlyBuffer2D<T>
             }
         }
     }
+    
+    public void ShiftDown()
+    {
+        for (int row = Rows - 1; row >= 1; row--)
+        {
+            for (int col = 0; col < Cols; col++)
+            {
+                _data[row, col] = _data[row - 1, col];
+            }
+        }
+    }
 }
 
 public class TaskHandle
@@ -309,6 +321,8 @@ internal class RainbowEffect : BaseEffect
     private int _height;
     private int _fps;
 
+    private int _counter;
+
     public RainbowEffect()
     {
         _colorsOutput = OutputSlots.RegisterOutput<IReadOnlyBuffer2D<Color>>("colorBuffer");
@@ -324,7 +338,21 @@ internal class RainbowEffect : BaseEffect
         Restart();
     }
 
-    private void Render() => _colorsOutput.Invoke(_colorBuffer);
+    private void Render()
+    {
+        _colorBuffer.ShiftDown();
+
+        double stepHueOffset = 360.0 / _height;
+
+        for (int i = 0; i < _height; i++)
+        {
+            _colorBuffer[new Index2D(0, i)] = Color.HSV((_counter * stepHueOffset) % 360, 1, 1);
+        }
+
+        _counter++;
+        
+        _colorsOutput.Invoke(_colorBuffer);
+    }
 
     private void Restart()
     {
@@ -449,9 +477,9 @@ internal class User
         RainbowEffect rainbowEffect = CreateEffect(() => new RainbowEffect());
         rainbowEffect.BindOutputs("colorBuffer", "colorBuffer1", overlayEffect);
 
-        ConstantEffect<int> widthEffect = CreateEffect(() => new ConstantEffect<int>(10));
+        ConstantEffect<int> widthEffect = CreateEffect(() => new ConstantEffect<int>(14));
         widthEffect.BindOutputs("value", "width", rainbowEffect);
-        ConstantEffect<int> heightEffect = CreateEffect(() => new ConstantEffect<int>(10));
+        ConstantEffect<int> heightEffect = CreateEffect(() => new ConstantEffect<int>(14));
         heightEffect.BindOutputs("value", "height", rainbowEffect);
         ConstantEffect<int> fpsEffect = CreateEffect(() => new ConstantEffect<int>(1));
         fpsEffect.BindOutputs("value", "fps", rainbowEffect);
