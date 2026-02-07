@@ -1,5 +1,6 @@
 using SkiaSharp;
 using XywireHost.Core;
+using XywireHost.Core.core;
 using XywireHost.Core.Graph;
 using XywireHost.Core.services;
 using XywireHost.UI.Controls;
@@ -24,7 +25,10 @@ public partial class NodeEditorPage : ContentPage
                 descriptor.TypeId,
                 descriptor.DisplayName,
                 descriptor.Inputs,
-                descriptor.Outputs))
+                descriptor.Outputs,
+                descriptor.EmbeddedInputs
+                    .Select(e => new EmbeddedInputInfo(e.Name, e.ValueType))
+                    .ToList()))
             .ToList();
 
         _definitionsByTypeId = _definitions.ToDictionary(definition => definition.TypeId);
@@ -113,20 +117,30 @@ public partial class NodeEditorPage : ContentPage
 
         foreach (NodeInstance node in NodesView.Nodes)
         {
-            // TODO probably rewriting can be started from here.
-            object? data = node.TypeId switch
+            // Copy embedded input values, applying system-provided values where needed
+            Dictionary<string, object?>? embeddedValues = null;
+            
+            if (node.EmbeddedInputs.Count > 0)
             {
-                "ConstantInt" => 14,
-                "LedLine" => _effectService.ConnectedLedLine,
-                _ => null,
-            };
+                embeddedValues = new Dictionary<string, object?>(node.EmbeddedInputValues);
+                
+                // Apply system-provided values for specific types
+                foreach (EmbeddedInputInfo embeddedInput in node.EmbeddedInputs)
+                {
+                    if (embeddedInput.ValueType == typeof(LedLine) && 
+                        !embeddedValues.ContainsKey(embeddedInput.Name))
+                    {
+                        embeddedValues[embeddedInput.Name] = _effectService.ConnectedLedLine;
+                    }
+                }
+            }
 
             model.Nodes.Add(new EffectGraphNode(
                 node.Id,
                 node.TypeId,
                 node.Position.X,
                 node.Position.Y,
-                data));
+                embeddedValues));
         }
 
         foreach (NodeConnection connection in NodesView.Connections)
@@ -152,5 +166,153 @@ public partial class NodeEditorPage : ContentPage
         }
 
         return _definitions[NodePicker.SelectedIndex];
+    }
+
+    private void OnNodeSelectionChanged(object? sender, NodeSelectionChangedEventArgs e)
+    {
+        EmbeddedInputsContainer.Children.Clear();
+        
+        if (e.SelectedNode == null || e.SelectedNode.EmbeddedInputs.Count == 0)
+        {
+            EmbeddedInputsPanel.IsVisible = false;
+            return;
+        }
+
+        NodeInstance node = e.SelectedNode;
+        SelectedNodeLabel.Text = node.Title;
+        
+        foreach (EmbeddedInputInfo embeddedInput in node.EmbeddedInputs)
+        {
+            View? editor = CreateEditorForType(node, embeddedInput);
+            if (editor != null)
+            {
+                VerticalStackLayout inputLayout = new() { Spacing = 4 };
+                inputLayout.Children.Add(new Label 
+                { 
+                    Text = embeddedInput.Name, 
+                    FontSize = 12, 
+                    TextColor = Colors.Gray 
+                });
+                inputLayout.Children.Add(editor);
+                EmbeddedInputsContainer.Children.Add(inputLayout);
+            }
+        }
+
+        EmbeddedInputsPanel.IsVisible = EmbeddedInputsContainer.Children.Count > 0;
+    }
+
+    private View? CreateEditorForType(NodeInstance node, EmbeddedInputInfo embeddedInput)
+    {
+        Type valueType = embeddedInput.ValueType;
+        string inputName = embeddedInput.Name;
+
+        // Get current value
+        node.EmbeddedInputValues.TryGetValue(inputName, out object? currentValue);
+
+        if (valueType == typeof(int))
+        {
+            Entry entry = new()
+            {
+                Keyboard = Keyboard.Numeric,
+                Text = currentValue?.ToString() ?? "0",
+                Placeholder = "Enter integer value"
+            };
+            
+            entry.TextChanged += (_, args) =>
+            {
+                if (int.TryParse(args.NewTextValue, out int intValue))
+                {
+                    node.EmbeddedInputValues[inputName] = intValue;
+                }
+            };
+            
+            // Initialize with default value if not set
+            if (currentValue == null && int.TryParse(entry.Text, out int defaultValue))
+            {
+                node.EmbeddedInputValues[inputName] = defaultValue;
+            }
+            
+            return entry;
+        }
+
+        if (valueType == typeof(float))
+        {
+            Entry entry = new()
+            {
+                Keyboard = Keyboard.Numeric,
+                Text = currentValue?.ToString() ?? "0",
+                Placeholder = "Enter float value"
+            };
+            
+            entry.TextChanged += (_, args) =>
+            {
+                if (float.TryParse(args.NewTextValue, out float floatValue))
+                {
+                    node.EmbeddedInputValues[inputName] = floatValue;
+                }
+            };
+            
+            return entry;
+        }
+
+        if (valueType == typeof(double))
+        {
+            Entry entry = new()
+            {
+                Keyboard = Keyboard.Numeric,
+                Text = currentValue?.ToString() ?? "0",
+                Placeholder = "Enter double value"
+            };
+            
+            entry.TextChanged += (_, args) =>
+            {
+                if (double.TryParse(args.NewTextValue, out double doubleValue))
+                {
+                    node.EmbeddedInputValues[inputName] = doubleValue;
+                }
+            };
+            
+            return entry;
+        }
+
+        if (valueType == typeof(string))
+        {
+            Entry entry = new()
+            {
+                Text = currentValue?.ToString() ?? "",
+                Placeholder = "Enter text value"
+            };
+            
+            entry.TextChanged += (_, args) =>
+            {
+                node.EmbeddedInputValues[inputName] = args.NewTextValue;
+            };
+            
+            return entry;
+        }
+
+        if (valueType == typeof(bool))
+        {
+            Switch toggle = new()
+            {
+                IsToggled = currentValue is true
+            };
+            
+            toggle.Toggled += (_, args) =>
+            {
+                node.EmbeddedInputValues[inputName] = args.Value;
+            };
+            
+            return toggle;
+        }
+
+        // For complex types like LedLine, show a label indicating it's system-provided
+        return new Label 
+        { 
+            Text = "(System provided)", 
+            FontSize = 12, 
+            TextColor = Colors.DimGray,
+            FontAttributes = FontAttributes.Italic
+        };
     }
 }

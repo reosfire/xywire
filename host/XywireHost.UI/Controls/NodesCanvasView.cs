@@ -44,6 +44,8 @@ public sealed class NodesCanvasView : SKCanvasView
     private SKPoint _cameraOffset = new(0f, 0f);
     private float _zoom = 1f;
 
+    public event EventHandler<NodeSelectionChangedEventArgs>? SelectionChanged;
+
     public NodesCanvasView()
     {
         EnableTouchEvents = true;
@@ -59,7 +61,7 @@ public sealed class NodesCanvasView : SKCanvasView
     {
         NodeInstance node = new(definition, position);
         Nodes.Add(node);
-        SelectedNodeId = node.Id;
+        SetSelectedNode(node.Id);
         InvalidateSurface();
         return node;
     }
@@ -127,10 +129,22 @@ public sealed class NodesCanvasView : SKCanvasView
         return false;
     }
 
+    private void SetSelectedNode(Guid? nodeId)
+    {
+        if (SelectedNodeId == nodeId)
+            return;
+            
+        SelectedNodeId = nodeId;
+        NodeInstance? selectedNode = nodeId.HasValue 
+            ? Nodes.FirstOrDefault(n => n.Id == nodeId.Value) 
+            : null;
+        SelectionChanged?.Invoke(this, new NodeSelectionChangedEventArgs(selectedNode));
+        InvalidateSurface();
+    }
+
     private void ClearSelection()
     {
-        SelectedNodeId = null;
-        InvalidateSurface();
+        SetSelectedNode(null);
     }
 
     public void FitToContent(float padding = 40f)
@@ -303,12 +317,12 @@ public sealed class NodesCanvasView : SKCanvasView
                     SKPoint worldLocation = ScreenToWorld(e.Location);
                     if (TryHitPort(worldLocation, out NodePortReference port))
                     {
-                        SelectedNodeId = port.NodeId;
+                        SetSelectedNode(port.NodeId);
                         _currentDragState = new ConnectionDragState(port, worldLocation);
                     }
                     else if (TryHitNode(worldLocation, out Guid nodeId, out SKPoint nodeOrigin))
                     {
-                        SelectedNodeId = nodeId;
+                        SetSelectedNode(nodeId);
                         _currentDragState = new NodeDragState(nodeId, worldLocation - nodeOrigin);
                     }
                     else
@@ -474,13 +488,21 @@ public sealed class NodesCanvasView : SKCanvasView
     private sealed record ConnectionDragState(NodePortReference StartPort, SKPoint CurrentWorld) : IDragState;
 }
 
-public sealed class NodeDefinition(string typeId, string name, IReadOnlyList<string> inputs, IReadOnlyList<string> outputs)
+public sealed class NodeDefinition(
+    string typeId, 
+    string name, 
+    IReadOnlyList<string> inputs, 
+    IReadOnlyList<string> outputs,
+    IReadOnlyList<EmbeddedInputInfo> embeddedInputs)
 {
     public string TypeId { get; } = typeId;
     public string Name { get; } = name;
     public IReadOnlyList<string> Inputs { get; } = inputs;
     public IReadOnlyList<string> Outputs { get; } = outputs;
+    public IReadOnlyList<EmbeddedInputInfo> EmbeddedInputs { get; } = embeddedInputs;
 }
+
+public sealed record EmbeddedInputInfo(string Name, Type ValueType);
 
 public sealed class NodeInstance(NodeDefinition definition, SKPoint position)
 {
@@ -489,7 +511,9 @@ public sealed class NodeInstance(NodeDefinition definition, SKPoint position)
     public string Title { get; } = definition.Name;
     public IReadOnlyList<string> Inputs { get; } = definition.Inputs;
     public IReadOnlyList<string> Outputs { get; } = definition.Outputs;
+    public IReadOnlyList<EmbeddedInputInfo> EmbeddedInputs { get; } = definition.EmbeddedInputs;
     public SKPoint Position { get; set; } = position;
+    public Dictionary<string, object?> EmbeddedInputValues { get; } = new();
 }
 
 public sealed class NodeConnection(Guid fromNodeId, string fromPort, Guid toNodeId, string toPort)
@@ -501,6 +525,11 @@ public sealed class NodeConnection(Guid fromNodeId, string fromPort, Guid toNode
 }
 
 public readonly record struct NodePortReference(Guid NodeId, string PortName, bool IsInput);
+
+public sealed class NodeSelectionChangedEventArgs(NodeInstance? selectedNode) : EventArgs
+{
+    public NodeInstance? SelectedNode { get; } = selectedNode;
+}
 
 public static class Operators
 {

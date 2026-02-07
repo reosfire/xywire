@@ -5,7 +5,7 @@ using XywireHost.Core.core;
 
 namespace XywireHost.Core.Graph;
 
-public sealed record EffectGraphNode(Guid Id, string TypeId, float X, float Y, object? Data);
+public sealed record EffectGraphNode(Guid Id, string TypeId, float X, float Y, Dictionary<string, object?>? EmbeddedInputValues = null);
 
 public sealed record EffectGraphConnection(Guid FromNodeId, string FromPort, Guid ToNodeId, string ToPort);
 
@@ -20,16 +20,18 @@ public sealed class EffectNodeDescriptor(
     string displayName,
     IReadOnlyList<string> inputs,
     IReadOnlyList<string> outputs,
-    Func<IEffectNodeInstance> createInstance,
-    Type? dataType = null)
+    IReadOnlyList<EmbeddedInputDescriptor> embeddedInputs,
+    Func<IEffectNodeInstance> createInstance)
 {
     public string TypeId { get; } = typeId;
     public string DisplayName { get; } = displayName;
     public IReadOnlyList<string> Inputs { get; } = inputs;
     public IReadOnlyList<string> Outputs { get; } = outputs;
+    public IReadOnlyList<EmbeddedInputDescriptor> EmbeddedInputs { get; } = embeddedInputs;
     public Func<IEffectNodeInstance> CreateInstance { get; } = createInstance;
-    public Type? DataType { get; } = dataType;
 }
+
+public sealed record EmbeddedInputDescriptor(string Name, Type ValueType);
 
 public static class EffectNodeCatalog
 {
@@ -40,37 +42,42 @@ public static class EffectNodeCatalog
             "Rainbow",
             ["width", "height", "fps"],
             ["colorBuffer"],
+            [],
             () => new RainbowEffect()),
         new(
             "Cube",
             "Cube",
             [],
             ["colorBuffer"],
+            [],
             () => new CubeEffect()),
         new(
             "Overlay",
             "Overlay",
             ["colorBuffer0", "colorBuffer1"],
             ["colorBuffer"],
+            [],
             () => new OverlayEffect()),
         new(
             "Multicast",
             "Multicast",
             ["colorBuffer"],
             ["colorBuffer0", "colorBuffer1"],
+            [],
             () => new MulticastEffect()),
         new(
             "ConstantInt",
             "Constant (int)",
             [],
             ["value"],
-            () => new ConstantEffect<int>(),
-            typeof(int)),
+            [new EmbeddedInputDescriptor("value", typeof(int))],
+            () => new ConstantEffect<int>()),
         new(
             "LedLine",
             "Led Line",
             ["colorBuffer"],
             [],
+            [new EmbeddedInputDescriptor("ledLine", typeof(LedLine))],
             () => new LedLineEffect()),
     };
 
@@ -104,6 +111,7 @@ public static class EffectGraphCompiler
     {
         List<string> errors = [];
         Dictionary<Guid, IEffectNodeInstance> instances = new();
+        Dictionary<Guid, EffectGraphNode> nodeDataMap = new();
 
         foreach (EffectGraphNode node in graph.Nodes)
         {
@@ -114,16 +122,31 @@ public static class EffectGraphCompiler
                 continue;
             }
 
-            if (descriptor.DataType != null && node.Data != null &&
-                !descriptor.DataType.IsInstanceOfType(node.Data))
+            // Validate embedded input values types
+            if (node.EmbeddedInputValues != null)
             {
-                errors.Add(
-                    $"Node {node.Id} expects data type {descriptor.DataType.Name} but got {node.Data.GetType().Name}.");
-                continue;
+                foreach (var (inputName, value) in node.EmbeddedInputValues)
+                {
+                    EmbeddedInputDescriptor? embeddedInput = descriptor.EmbeddedInputs
+                        .FirstOrDefault(e => e.Name == inputName);
+                    
+                    if (embeddedInput == null)
+                    {
+                        errors.Add($"Unknown embedded input '{inputName}' for node {node.Id}.");
+                        continue;
+                    }
+
+                    if (value != null && !embeddedInput.ValueType.IsInstanceOfType(value))
+                    {
+                        errors.Add(
+                            $"Embedded input '{inputName}' on node {node.Id} expects type {embeddedInput.ValueType.Name} but got {value.GetType().Name}.");
+                    }
+                }
             }
 
             IEffectNodeInstance instance = descriptor.CreateInstance();
             instances[node.Id] = instance;
+            nodeDataMap[node.Id] = node;
         }
 
         foreach (EffectGraphConnection connection in graph.Connections)
@@ -162,6 +185,29 @@ public static class EffectGraphCompiler
 
             outputSlot.SetSetValue(inputHandle.GetSetValue());
             inputHandle.IsConnected = true;
+        }
+
+        // Invoke embedded inputs with provided values
+        foreach (var (nodeId, instance) in instances)
+        {
+            if (!nodeDataMap.TryGetValue(nodeId, out EffectGraphNode? node))
+                continue;
+
+            if (node.EmbeddedInputValues == null)
+                continue;
+
+            foreach (var (inputName, value) in node.EmbeddedInputValues)
+            {
+                if (value == null)
+                    continue;
+
+                if (!instance.EmbeddedInputs.TryGetValue(inputName, out IUntypedInputHandle? inputHandle))
+                    continue;
+
+                // Get the SetValue delegate and invoke it with the value
+                Delegate setValue = inputHandle.GetSetValue();
+                setValue.DynamicInvoke(value);
+            }
         }
 
         foreach (IEffectNodeInstance instance in instances.Values)

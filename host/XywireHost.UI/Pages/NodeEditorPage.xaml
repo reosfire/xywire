@@ -6,8 +6,8 @@
              x:Class="XywireHost.UI.Pages.NodeEditorPage"
              Title="Node Editor">
 
-    <Grid RowDefinitions="Auto,*,Auto" Padding="16" RowSpacing="12">
-        <VerticalStackLayout Grid.Row="0" Spacing="8">
+    <Grid RowDefinitions="Auto,*,Auto" ColumnDefinitions="*,Auto" Padding="16" RowSpacing="12" ColumnSpacing="12">
+        <VerticalStackLayout Grid.Row="0" Grid.Column="0" Spacing="8">
             <Label Text="Node Graph"
                    FontSize="20"
                    FontAttributes="Bold" />
@@ -28,12 +28,28 @@
             </HorizontalStackLayout>
         </VerticalStackLayout>
 
-        <Border Grid.Row="1"
+        <Border Grid.Row="1" Grid.Column="0"
                 Stroke="#333333"
                 StrokeThickness="1"
                 StrokeShape="RoundRectangle 8"
                 Padding="0">
-            <controls:NodesCanvasView x:Name="NodesView" />
+            <controls:NodesCanvasView x:Name="NodesView" 
+                                       SelectionChanged="OnNodeSelectionChanged" />
+        </Border>
+        
+        <!-- Embedded Inputs Properties Panel -->
+        <Border Grid.Row="0" Grid.RowSpan="2" Grid.Column="1"
+                Stroke="#333333"
+                StrokeThickness="1"
+                StrokeShape="RoundRectangle 8"
+                Padding="12"
+                WidthRequest="250"
+                IsVisible="{Binding Source={x:Reference EmbeddedInputsPanel}, Path=IsVisible}">
+            <VerticalStackLayout x:Name="EmbeddedInputsPanel" Spacing="8" IsVisible="False">
+                <Label Text="Properties" FontSize="16" FontAttributes="Bold" />
+                <Label x:Name="SelectedNodeLabel" FontSize="14" TextColor="Gray" />
+                <VerticalStackLayout x:Name="EmbeddedInputsContainer" Spacing="8" />
+            </VerticalStackLayout>
         </Border>
     </Grid>
 
