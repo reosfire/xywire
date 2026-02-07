@@ -71,7 +71,7 @@ public static class EffectNodeCatalog
             "Led Line",
             ["colorBuffer"],
             [],
-            () => new LedLineNode(new("52"))),
+            () => new LedLineEffect()),
     };
 
     private static readonly IReadOnlyDictionary<string, EffectNodeDescriptor> CatalogLookup =

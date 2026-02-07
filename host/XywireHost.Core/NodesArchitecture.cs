@@ -52,13 +52,6 @@ public abstract class BaseEffect : IDataSink, IDataSource, IEffectNodeInstance
         BindOutputs(outputSlot, inputHandle);
     }
 
-    public void BindOutputs(string outputSlotName, string inputHandleName, LedLineNode targetEffect)
-    {
-        IUntypedOutputSlot outputSlot = _outputs._container[outputSlotName];
-        IUntypedInputHandle inputHandle = targetEffect._inputs._container[inputHandleName];
-        BindOutputs(outputSlot, inputHandle);
-    }
-
     public static void BindOutputs(IUntypedOutputSlot outputSlot, IUntypedInputHandle inputHandle)
     {
         if (inputHandle.IsConnected)
@@ -75,51 +68,6 @@ public abstract class BaseEffect : IDataSink, IDataSource, IEffectNodeInstance
 
     public virtual void Initialize(IEffectContext context)
     {
-    }
-}
-
-// TODO ledline is actually just effect with system input for connection handle
-public sealed class LedLineNode : IDataSink, IEffectNodeInstance
-{
-    private static readonly IReadOnlyDictionary<string, IUntypedInputHandle> EmptyInputs =
-        new Dictionary<string, IUntypedInputHandle>();
-    internal readonly EffectInputsCollection _inputs = new();
-    private static readonly IReadOnlyDictionary<string, IUntypedOutputSlot> EmptyOutputs =
-        new Dictionary<string, IUntypedOutputSlot>();
-
-    public IEffectInputsCollection InputHandles => _inputs;
-
-    public IReadOnlyDictionary<string, IUntypedInputHandle> EmbeddedInputs => EmptyInputs;
-    public IReadOnlyDictionary<string, IUntypedInputHandle> Inputs => _inputs.Entries;
-    public IReadOnlyDictionary<string, IUntypedOutputSlot> Outputs => EmptyOutputs;
-
-    private readonly LedLine _ledLine;
-    
-    public LedLineNode(LedLine ledLine)
-    {
-        _inputs.RegisterInput<IReadOnlyBuffer2D<Color>>("colorBuffer", SetColorBuffer);
-        
-        _ledLine = ledLine;
-    }
-
-    public void Initialize(IEffectContext context)
-    {
-    }
-
-    // TODO actually it should accept 1D buffer
-    private void SetColorBuffer(IReadOnlyBuffer2D<Color> buffer)
-    {
-        Color[][] colors = new Color[buffer.Rows][];
-        for (int row = 0; row < buffer.Rows; row++)
-        {
-            colors[row] = new Color[buffer.Cols];
-            for (int col = 0; col < buffer.Cols; col++)
-            {
-                colors[row][col] = buffer[new Index2D(row, col)];
-            }
-        }
-        
-        _ledLine.SetColors(colors);
     }
 }
 
@@ -497,6 +445,44 @@ internal class SelectEffect : BaseEffect
     private void SetColorBuffer1(IReadOnlyBuffer2D<Color> buffer) => _colorsOutput.Invoke(buffer);
 }
 
+public sealed class LedLineEffect : BaseEffect
+{
+    private LedLine? _ledLine;
+    
+    public LedLineEffect()
+    {
+        // TODO sort input output registration across project.
+        EmbeddedInputHandles.RegisterInput<LedLine>("ledLine", SetLedLine);
+        InputHandles.RegisterInput<IReadOnlyBuffer2D<Color>>("colorBuffer", SetColorBuffer);
+    }
+
+    private void SetLedLine(LedLine value)
+    {
+        // TODO this shit is async and it's maybe weird to clear led line here.
+        // but it's required because on real esp there is a generation int which must be cleared before starting transmission
+        value.SendClearPacket();
+        _ledLine = value;
+    }
+
+    // TODO actually it should accept 1D buffer
+    private void SetColorBuffer(IReadOnlyBuffer2D<Color> buffer)
+    {
+        if (_ledLine == null) return;
+        
+        Color[][] colors = new Color[buffer.Rows][];
+        for (int row = 0; row < buffer.Rows; row++)
+        {
+            colors[row] = new Color[buffer.Cols];
+            for (int col = 0; col < buffer.Cols; col++)
+            {
+                colors[row][col] = buffer[new Index2D(row, col)];
+            }
+        }
+        
+        _ledLine.SetColors(colors);
+    }
+}
+
 internal class User
 {
     private static readonly List<BaseEffect> Effects = [];
@@ -510,8 +496,8 @@ internal class User
 
     public static void Main()
     {
-        LedLineNode ledline1 = new(new LedLine("127.0.0.1"));
-        LedLineNode ledline2 = new(new LedLine("192.168.1.65"));
+        LedLineEffect ledline1 = new();
+        LedLineEffect ledline2 = new();
 
         MulticastEffect multicastEffect = CreateEffect(() => new MulticastEffect());
         // TODO recursive output collections or at least arrays
@@ -544,6 +530,12 @@ internal class User
         
         OutputSlot<int> fpsOutput = systemOutputs.RegisterOutput<int>("value");
         BaseEffect.BindOutputs(fpsOutput, fpsEffect.EmbeddedInputs["value"]);
+        
+        OutputSlot<LedLine> ledLineOutput1 = systemOutputs.RegisterOutput<LedLine>("value");
+        BaseEffect.BindOutputs(ledLineOutput1, ledline1.EmbeddedInputs["ledLine"]);
+        
+        OutputSlot<LedLine> ledLineOutput2 = systemOutputs.RegisterOutput<LedLine>("value");
+        BaseEffect.BindOutputs(ledLineOutput2, ledline2.EmbeddedInputs["ledLine"]);
 
         foreach (BaseEffect effect in Effects)
         {
@@ -553,16 +545,17 @@ internal class User
             }
         }
         
+        widthOutput.Invoke(14);
+        heightOutput.Invoke(14);
+        fpsOutput.Invoke(5);
+        ledLineOutput1.Invoke(new LedLine("192.168.1.65"));
+        ledLineOutput2.Invoke(new LedLine("127.0.0.1"));
+        
         IEffectContext context = new EffectContext();
-
         foreach (BaseEffect effect in Effects)
         {
             effect.Initialize(context);
         }
-        
-        widthOutput.Invoke(14);
-        heightOutput.Invoke(14);
-        fpsOutput.Invoke(5);
 
         Console.ReadKey();
     }
