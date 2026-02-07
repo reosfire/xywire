@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using SkiaSharp;
 using XywireHost.Core;
 using XywireHost.Core.core;
@@ -10,14 +11,14 @@ namespace XywireHost.UI.Pages;
 public partial class NodeEditorPage : ContentPage
 {
     private readonly EffectService _effectService;
-    
+
     private readonly List<NodeDefinition> _definitions;
     private readonly Dictionary<string, NodeDefinition> _definitionsByTypeId;
 
     public NodeEditorPage(EffectService effectService)
     {
         InitializeComponent();
-        
+
         _effectService = effectService;
 
         _definitions = EffectNodeCatalog.All
@@ -38,7 +39,7 @@ public partial class NodeEditorPage : ContentPage
         {
             NodePicker.SelectedIndex = 0;
         }
-        
+
         SeedSampleGraph();
     }
 
@@ -91,10 +92,7 @@ public partial class NodeEditorPage : ContentPage
         NodesView.RemoveNode(nodeId);
     }
 
-    private void OnFitViewClicked(object sender, EventArgs e)
-    {
-        NodesView.FitToContent();
-    }
+    private void OnFitViewClicked(object sender, EventArgs e) => NodesView.FitToContent();
 
     private async void OnCompileGraphClicked(object sender, EventArgs e)
     {
@@ -119,15 +117,15 @@ public partial class NodeEditorPage : ContentPage
         {
             // Copy embedded input values, applying system-provided values where needed
             Dictionary<string, object?>? embeddedValues = null;
-            
+
             if (node.EmbeddedInputs.Count > 0)
             {
                 embeddedValues = new Dictionary<string, object?>(node.EmbeddedInputValues);
-                
+
                 // Apply system-provided values for specific types
                 foreach (EmbeddedInputInfo embeddedInput in node.EmbeddedInputs)
                 {
-                    if (embeddedInput.ValueType == typeof(LedLine) && 
+                    if (embeddedInput.ValueType == typeof(LedLine) &&
                         !embeddedValues.ContainsKey(embeddedInput.Name))
                     {
                         embeddedValues[embeddedInput.Name] = _effectService.ConnectedLedLine;
@@ -155,7 +153,7 @@ public partial class NodeEditorPage : ContentPage
         return model;
     }
 
-    private bool TryGetDefinition(string typeId, out NodeDefinition? definition) =>
+    private bool TryGetDefinition(string typeId, [MaybeNullWhen(false)] out NodeDefinition definition) =>
         _definitionsByTypeId.TryGetValue(typeId, out definition);
 
     private NodeDefinition? GetSelectedDefinition()
@@ -171,7 +169,7 @@ public partial class NodeEditorPage : ContentPage
     private void OnNodeSelectionChanged(object? sender, NodeSelectionChangedEventArgs e)
     {
         EmbeddedInputsContainer.Children.Clear();
-        
+
         if (e.SelectedNode == null || e.SelectedNode.EmbeddedInputs.Count == 0)
         {
             EmbeddedInputsPanel.IsVisible = false;
@@ -180,18 +178,16 @@ public partial class NodeEditorPage : ContentPage
 
         NodeInstance node = e.SelectedNode;
         SelectedNodeLabel.Text = node.Title;
-        
+
         foreach (EmbeddedInputInfo embeddedInput in node.EmbeddedInputs)
         {
             View? editor = CreateEditorForType(node, embeddedInput);
             if (editor != null)
             {
                 VerticalStackLayout inputLayout = new() { Spacing = 4 };
-                inputLayout.Children.Add(new Label 
-                { 
-                    Text = embeddedInput.Name, 
-                    FontSize = 12, 
-                    TextColor = Colors.Gray 
+                inputLayout.Children.Add(new Label
+                {
+                    Text = embeddedInput.Name, FontSize = 12, TextColor = Colors.Gray,
                 });
                 inputLayout.Children.Add(editor);
                 EmbeddedInputsContainer.Children.Add(inputLayout);
@@ -215,9 +211,9 @@ public partial class NodeEditorPage : ContentPage
             {
                 Keyboard = Keyboard.Numeric,
                 Text = currentValue?.ToString() ?? "0",
-                Placeholder = "Enter integer value"
+                Placeholder = "Enter integer value",
             };
-            
+
             entry.TextChanged += (_, args) =>
             {
                 if (int.TryParse(args.NewTextValue, out int intValue))
@@ -225,13 +221,13 @@ public partial class NodeEditorPage : ContentPage
                     node.EmbeddedInputValues[inputName] = intValue;
                 }
             };
-            
+
             // Initialize with default value if not set
             if (currentValue == null && int.TryParse(entry.Text, out int defaultValue))
             {
                 node.EmbeddedInputValues[inputName] = defaultValue;
             }
-            
+
             return entry;
         }
 
@@ -241,9 +237,9 @@ public partial class NodeEditorPage : ContentPage
             {
                 Keyboard = Keyboard.Numeric,
                 Text = currentValue?.ToString() ?? "0",
-                Placeholder = "Enter float value"
+                Placeholder = "Enter float value",
             };
-            
+
             entry.TextChanged += (_, args) =>
             {
                 if (float.TryParse(args.NewTextValue, out float floatValue))
@@ -251,7 +247,7 @@ public partial class NodeEditorPage : ContentPage
                     node.EmbeddedInputValues[inputName] = floatValue;
                 }
             };
-            
+
             return entry;
         }
 
@@ -261,9 +257,9 @@ public partial class NodeEditorPage : ContentPage
             {
                 Keyboard = Keyboard.Numeric,
                 Text = currentValue?.ToString() ?? "0",
-                Placeholder = "Enter double value"
+                Placeholder = "Enter double value",
             };
-            
+
             entry.TextChanged += (_, args) =>
             {
                 if (double.TryParse(args.NewTextValue, out double doubleValue))
@@ -271,48 +267,41 @@ public partial class NodeEditorPage : ContentPage
                     node.EmbeddedInputValues[inputName] = doubleValue;
                 }
             };
-            
+
             return entry;
         }
 
         if (valueType == typeof(string))
         {
-            Entry entry = new()
-            {
-                Text = currentValue?.ToString() ?? "",
-                Placeholder = "Enter text value"
-            };
-            
+            Entry entry = new() { Text = currentValue?.ToString() ?? "", Placeholder = "Enter text value" };
+
             entry.TextChanged += (_, args) =>
             {
                 node.EmbeddedInputValues[inputName] = args.NewTextValue;
             };
-            
+
             return entry;
         }
 
         if (valueType == typeof(bool))
         {
-            Switch toggle = new()
-            {
-                IsToggled = currentValue is true
-            };
-            
+            Switch toggle = new() { IsToggled = currentValue is true };
+
             toggle.Toggled += (_, args) =>
             {
                 node.EmbeddedInputValues[inputName] = args.Value;
             };
-            
+
             return toggle;
         }
 
         // For complex types like LedLine, show a label indicating it's system-provided
-        return new Label 
-        { 
-            Text = "(System provided)", 
-            FontSize = 12, 
+        return new Label
+        {
+            Text = "(System provided)",
+            FontSize = 12,
             TextColor = Colors.DimGray,
-            FontAttributes = FontAttributes.Italic
+            FontAttributes = FontAttributes.Italic,
         };
     }
 }

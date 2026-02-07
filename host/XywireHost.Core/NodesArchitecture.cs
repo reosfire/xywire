@@ -45,6 +45,10 @@ public abstract class BaseEffect : IDataSink, IDataSource, IEffectNodeInstance
     public IReadOnlyDictionary<string, IUntypedInputHandle> Inputs => _inputs.Entries;
     public IReadOnlyDictionary<string, IUntypedOutputSlot> Outputs => _outputs.Entries;
 
+    public virtual void Initialize(IEffectContext context)
+    {
+    }
+
     public void BindOutputs(string outputSlotName, string inputHandleName, BaseEffect targetEffect)
     {
         IUntypedOutputSlot outputSlot = _outputs._container[outputSlotName];
@@ -65,10 +69,6 @@ public abstract class BaseEffect : IDataSink, IDataSource, IEffectNodeInstance
     public bool AllInputsConnected() => _inputs._container.Values.All(inputHandle => inputHandle.IsConnected);
 
     public bool NoInputs() => _inputs._container.Count == 0;
-
-    public virtual void Initialize(IEffectContext context)
-    {
-    }
 }
 
 public interface IUntypedOutputSlot
@@ -109,10 +109,7 @@ public class OutputSlot<T>(string id) : IUntypedOutputSlot
         }
     }
 
-    public void Invoke(T value)
-    {
-        _setValueDelegate?.Invoke(value);
-    }
+    public void Invoke(T value) => _setValueDelegate?.Invoke(value);
 }
 
 internal class InputHandle<T>(string id, Action<T> valueChangeHandler) : IUntypedInputHandle
@@ -198,7 +195,7 @@ internal readonly struct Buffer2D<T> : IReadOnlyBuffer2D<T>
             }
         }
     }
-    
+
     public void ShiftDown()
     {
         for (int row = Rows - 1; row >= 1; row--)
@@ -263,7 +260,7 @@ public class Scheduler
                 else
                     Thread.SpinWait(10);
             }
-            
+
             if (sw.Elapsed.TotalMilliseconds > nextFrameTime + frameTimeMs)
             {
                 nextFrameTime = sw.Elapsed.TotalMilliseconds;
@@ -275,7 +272,7 @@ public class Scheduler
 internal class ConstantEffect<T> : BaseEffect
 {
     private readonly OutputSlot<T> _outputSlot;
-    
+
     private T? _value;
     private bool _effectInitialized = false;
 
@@ -288,7 +285,7 @@ internal class ConstantEffect<T> : BaseEffect
     public override void Initialize(IEffectContext context)
     {
         _effectInitialized = true;
-        
+
         if (_value != null)
         {
             _outputSlot.Invoke(_value);
@@ -310,7 +307,7 @@ internal class RainbowEffect : BaseEffect
 {
     private readonly OutputSlot<IReadOnlyBuffer2D<Color>> _colorsOutput;
     private Buffer2D<Color> _colorBuffer;
-    
+
     private IEffectContext? _context;
     private TaskHandle? _renderTaskHandle;
 
@@ -343,21 +340,21 @@ internal class RainbowEffect : BaseEffect
 
         for (int i = 0; i < _height; i++)
         {
-            _colorBuffer[new Index2D(0, i)] = Color.HSV((_counter * stepHueOffset) % 360, 1, 1);
+            _colorBuffer[new Index2D(0, i)] = Color.HSV(_counter * stepHueOffset % 360, 1, 1);
         }
 
         _counter++;
-        
+
         _colorsOutput.Invoke(_colorBuffer);
     }
 
     private void Restart()
     {
         _renderTaskHandle?.Stop();
-        
+
         if (_width <= 0 || _height <= 0 || _fps <= 0) return;
         if (_context == null) return;
-        
+
         _colorBuffer = new Buffer2D<Color>(_height, _width);
         _renderTaskHandle = _context!.Scheduler.ScheduleTask(Render, _fps);
     }
@@ -394,7 +391,7 @@ internal class CubeEffect : BaseEffect
 internal class OverlayEffect : BaseEffect
 {
     private readonly OutputSlot<IReadOnlyBuffer2D<Color>> _colorsOutput;
-    
+
     private IReadOnlyBuffer2D<Color>? _buffer0;
     private IReadOnlyBuffer2D<Color>? _buffer1;
 
@@ -421,20 +418,20 @@ internal class OverlayEffect : BaseEffect
     private void BlendAndOutput()
     {
         if (_buffer0 == null || _buffer1 == null) return;
-        
+
         // Use buffer0 dimensions as base
         int rows = _buffer0.Rows;
         int cols = _buffer0.Cols;
-        
+
         Buffer2D<Color> result = new(rows, cols);
-        
+
         for (int row = 0; row < rows; row++)
         {
             for (int col = 0; col < cols; col++)
             {
                 Index2D idx = new(row, col);
                 Color c0 = _buffer0[idx];
-                
+
                 // If buffer1 has this pixel, blend; otherwise use buffer0
                 if (row < _buffer1.Rows && col < _buffer1.Cols)
                 {
@@ -451,7 +448,7 @@ internal class OverlayEffect : BaseEffect
                 }
             }
         }
-        
+
         _colorsOutput.Invoke(result);
     }
 }
@@ -480,7 +477,7 @@ internal class WhiteCircleEffect : BaseEffect
 {
     private readonly OutputSlot<IReadOnlyBuffer2D<Color>> _colorsOutput;
     private Buffer2D<Color> _colorBuffer;
-    
+
     private IEffectContext? _context;
     private TaskHandle? _renderTaskHandle;
 
@@ -542,10 +539,10 @@ internal class WhiteCircleEffect : BaseEffect
     private void Restart()
     {
         _renderTaskHandle?.Stop();
-        
+
         if (_width <= 0 || _height <= 0 || _fps <= 0) return;
         if (_context == null) return;
-        
+
         _colorBuffer = new Buffer2D<Color>(_height, _width);
         _renderTaskHandle = _context!.Scheduler.ScheduleTask(Render, _fps);
     }
@@ -595,7 +592,7 @@ internal class SelectEffect : BaseEffect
 public sealed class LedLineEffect : BaseEffect
 {
     private LedLine? _ledLine;
-    
+
     public LedLineEffect()
     {
         // TODO sort input output registration across project.
@@ -615,7 +612,7 @@ public sealed class LedLineEffect : BaseEffect
     private void SetColorBuffer(IReadOnlyBuffer2D<Color> buffer)
     {
         if (_ledLine == null) return;
-        
+
         Color[][] colors = new Color[buffer.Rows][];
         for (int row = 0; row < buffer.Rows; row++)
         {
@@ -625,7 +622,7 @@ public sealed class LedLineEffect : BaseEffect
                 colors[row][col] = buffer[new Index2D(row, col)];
             }
         }
-        
+
         _ledLine.SetColors(colors);
     }
 }
@@ -666,21 +663,21 @@ internal class User
         heightEffect.BindOutputs("value", "height", rainbowEffect);
         ConstantEffect<int> fpsEffect = CreateEffect(() => new ConstantEffect<int>());
         fpsEffect.BindOutputs("value", "fps", rainbowEffect);
-        
+
         EffectOutputsCollection systemOutputs = new();
-        
+
         OutputSlot<int> widthOutput = systemOutputs.RegisterOutput<int>("value");
         BaseEffect.BindOutputs(widthOutput, widthEffect.EmbeddedInputs["value"]);
-        
+
         OutputSlot<int> heightOutput = systemOutputs.RegisterOutput<int>("value");
         BaseEffect.BindOutputs(heightOutput, heightEffect.EmbeddedInputs["value"]);
-        
+
         OutputSlot<int> fpsOutput = systemOutputs.RegisterOutput<int>("value");
         BaseEffect.BindOutputs(fpsOutput, fpsEffect.EmbeddedInputs["value"]);
-        
+
         OutputSlot<LedLine> ledLineOutput1 = systemOutputs.RegisterOutput<LedLine>("value");
         BaseEffect.BindOutputs(ledLineOutput1, ledline1.EmbeddedInputs["ledLine"]);
-        
+
         OutputSlot<LedLine> ledLineOutput2 = systemOutputs.RegisterOutput<LedLine>("value");
         BaseEffect.BindOutputs(ledLineOutput2, ledline2.EmbeddedInputs["ledLine"]);
 
@@ -691,13 +688,13 @@ internal class User
                 throw new InvalidOperationException("Not all inputs are connected for effect " + effect.GetType().Name);
             }
         }
-        
+
         widthOutput.Invoke(14);
         heightOutput.Invoke(14);
         fpsOutput.Invoke(5);
         ledLineOutput1.Invoke(new LedLine("192.168.1.65"));
         ledLineOutput2.Invoke(new LedLine("127.0.0.1"));
-        
+
         IEffectContext context = new EffectContext();
         foreach (BaseEffect effect in Effects)
         {

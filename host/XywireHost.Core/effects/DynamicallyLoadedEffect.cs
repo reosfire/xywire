@@ -8,7 +8,7 @@ public class DynamicallyLoadedEffect : AbstractEffect
 {
     private readonly LoadedEffectBase _currentEffect;
     private readonly Color[][] _colorsBuffer;
-    
+
     public DynamicallyLoadedEffect(LedLine attachedLedLine) : base(attachedLedLine)
     {
         _colorsBuffer = Array2D.CreateJagged<Color>(attachedLedLine.Height, attachedLedLine.Width);
@@ -20,11 +20,11 @@ public class DynamicallyLoadedEffect : AbstractEffect
         _currentEffect.FillFrame(_colorsBuffer);
         LedLine.SetColors(_colorsBuffer);
     }
-    
+
     private static IReadOnlyList<LoadedEffectBase> LoadFromFolder(string folderPath)
     {
         List<LoadedEffectBase> result = [];
-        
+
         folderPath = Path.GetFullPath(folderPath);
         if (!Directory.Exists(folderPath)) return result;
 
@@ -42,6 +42,6 @@ public class DynamicallyLoadedEffect : AbstractEffect
 
         return result;
     }
-    
+
     protected override int StabilizeFps() => 60;
 }

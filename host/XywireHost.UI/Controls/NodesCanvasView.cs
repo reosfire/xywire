@@ -44,8 +44,6 @@ public sealed class NodesCanvasView : SKCanvasView
     private SKPoint _cameraOffset = new(0f, 0f);
     private float _zoom = 1f;
 
-    public event EventHandler<NodeSelectionChangedEventArgs>? SelectionChanged;
-
     public NodesCanvasView()
     {
         EnableTouchEvents = true;
@@ -56,6 +54,8 @@ public sealed class NodesCanvasView : SKCanvasView
     public IList<NodeConnection> Connections { get; } = new List<NodeConnection>();
 
     public Guid? SelectedNodeId { get; private set; }
+
+    public event EventHandler<NodeSelectionChangedEventArgs>? SelectionChanged;
 
     public NodeInstance AddNode(NodeDefinition definition, SKPoint position)
     {
@@ -133,19 +133,16 @@ public sealed class NodesCanvasView : SKCanvasView
     {
         if (SelectedNodeId == nodeId)
             return;
-            
+
         SelectedNodeId = nodeId;
-        NodeInstance? selectedNode = nodeId.HasValue 
-            ? Nodes.FirstOrDefault(n => n.Id == nodeId.Value) 
+        NodeInstance? selectedNode = nodeId.HasValue
+            ? Nodes.FirstOrDefault(n => n.Id == nodeId.Value)
             : null;
         SelectionChanged?.Invoke(this, new NodeSelectionChangedEventArgs(selectedNode));
         InvalidateSurface();
     }
 
-    private void ClearSelection()
-    {
-        SetSelectedNode(null);
-    }
+    private void ClearSelection() => SetSelectedNode(null);
 
     public void FitToContent(float padding = 40f)
     {
@@ -434,7 +431,7 @@ public sealed class NodesCanvasView : SKCanvasView
         NodePortReference input = a.IsInput ? a : b;
 
         if (output.IsInput || !input.IsInput) return;
-        
+
         if (!RemoveConnection(output, input)) TryAddConnection(output, input);
     }
 
@@ -489,9 +486,9 @@ public sealed class NodesCanvasView : SKCanvasView
 }
 
 public sealed class NodeDefinition(
-    string typeId, 
-    string name, 
-    IReadOnlyList<string> inputs, 
+    string typeId,
+    string name,
+    IReadOnlyList<string> inputs,
     IReadOnlyList<string> outputs,
     IReadOnlyList<EmbeddedInputInfo> embeddedInputs)
 {

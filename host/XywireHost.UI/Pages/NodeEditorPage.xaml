@@ -33,10 +33,10 @@
                 StrokeThickness="1"
                 StrokeShape="RoundRectangle 8"
                 Padding="0">
-            <controls:NodesCanvasView x:Name="NodesView" 
-                                       SelectionChanged="OnNodeSelectionChanged" />
+            <controls:NodesCanvasView x:Name="NodesView"
+                                      SelectionChanged="OnNodeSelectionChanged" />
         </Border>
-        
+
         <!-- Embedded Inputs Properties Panel -->
         <Border Grid.Row="0" Grid.RowSpan="2" Grid.Column="1"
                 Stroke="#333333"

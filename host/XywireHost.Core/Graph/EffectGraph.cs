@@ -1,11 +1,14 @@
 using System.Collections.ObjectModel;
-using System.Reflection;
-using XywireHost.Core;
 using XywireHost.Core.core;
 
 namespace XywireHost.Core.Graph;
 
-public sealed record EffectGraphNode(Guid Id, string TypeId, float X, float Y, Dictionary<string, object?>? EmbeddedInputValues = null);
+public sealed record EffectGraphNode(
+    Guid Id,
+    string TypeId,
+    float X,
+    float Y,
+    Dictionary<string, object?>? EmbeddedInputValues = null);
 
 public sealed record EffectGraphConnection(Guid FromNodeId, string FromPort, Guid ToNodeId, string ToPort);
 
@@ -35,7 +38,10 @@ public sealed record EmbeddedInputDescriptor(string Name, Type ValueType);
 
 public static class EffectNodeCatalog
 {
-    private static readonly IReadOnlyList<EffectNodeDescriptor> Catalog = new List<EffectNodeDescriptor>
+    private static readonly IReadOnlyDictionary<string, EffectNodeDescriptor> CatalogLookup =
+        new ReadOnlyDictionary<string, EffectNodeDescriptor>(All.ToDictionary(node => node.TypeId));
+
+    public static IReadOnlyList<EffectNodeDescriptor> All { get; } = new List<EffectNodeDescriptor>
     {
         new(
             "Rainbow",
@@ -88,11 +94,6 @@ public static class EffectNodeCatalog
             () => new LedLineEffect()),
     };
 
-    private static readonly IReadOnlyDictionary<string, EffectNodeDescriptor> CatalogLookup =
-        new ReadOnlyDictionary<string, EffectNodeDescriptor>(Catalog.ToDictionary(node => node.TypeId));
-
-    public static IReadOnlyList<EffectNodeDescriptor> All => Catalog;
-
     public static EffectNodeDescriptor? TryGet(string typeId) =>
         CatalogLookup.GetValueOrDefault(typeId);
 }
@@ -132,11 +133,11 @@ public static class EffectGraphCompiler
             // Validate embedded input values types
             if (node.EmbeddedInputValues != null)
             {
-                foreach (var (inputName, value) in node.EmbeddedInputValues)
+                foreach ((string inputName, object? value) in node.EmbeddedInputValues)
                 {
                     EmbeddedInputDescriptor? embeddedInput = descriptor.EmbeddedInputs
                         .FirstOrDefault(e => e.Name == inputName);
-                    
+
                     if (embeddedInput == null)
                     {
                         errors.Add($"Unknown embedded input '{inputName}' for node {node.Id}.");
@@ -195,7 +196,7 @@ public static class EffectGraphCompiler
         }
 
         // Invoke embedded inputs with provided values
-        foreach (var (nodeId, instance) in instances)
+        foreach ((Guid nodeId, IEffectNodeInstance instance) in instances)
         {
             if (!nodeDataMap.TryGetValue(nodeId, out EffectGraphNode? node))
                 continue;
@@ -203,7 +204,7 @@ public static class EffectGraphCompiler
             if (node.EmbeddedInputValues == null)
                 continue;
 
-            foreach (var (inputName, value) in node.EmbeddedInputValues)
+            foreach ((string inputName, object? value) in node.EmbeddedInputValues)
             {
                 if (value == null)
                     continue;
