@@ -394,6 +394,9 @@ internal class CubeEffect : BaseEffect
 internal class OverlayEffect : BaseEffect
 {
     private readonly OutputSlot<IReadOnlyBuffer2D<Color>> _colorsOutput;
+    
+    private IReadOnlyBuffer2D<Color>? _buffer0;
+    private IReadOnlyBuffer2D<Color>? _buffer1;
 
     public OverlayEffect()
     {
@@ -403,9 +406,54 @@ internal class OverlayEffect : BaseEffect
         InputHandles.RegisterInput<IReadOnlyBuffer2D<Color>>("colorBuffer1", SetColorBuffer1);
     }
 
-    private void SetColorBuffer0(IReadOnlyBuffer2D<Color> buffer) => _colorsOutput.Invoke(buffer);
+    private void SetColorBuffer0(IReadOnlyBuffer2D<Color> buffer)
+    {
+        _buffer0 = buffer;
+        BlendAndOutput();
+    }
 
-    private void SetColorBuffer1(IReadOnlyBuffer2D<Color> buffer) => _colorsOutput.Invoke(buffer);
+    private void SetColorBuffer1(IReadOnlyBuffer2D<Color> buffer)
+    {
+        _buffer1 = buffer;
+        BlendAndOutput();
+    }
+
+    private void BlendAndOutput()
+    {
+        if (_buffer0 == null || _buffer1 == null) return;
+        
+        // Use buffer0 dimensions as base
+        int rows = _buffer0.Rows;
+        int cols = _buffer0.Cols;
+        
+        Buffer2D<Color> result = new(rows, cols);
+        
+        for (int row = 0; row < rows; row++)
+        {
+            for (int col = 0; col < cols; col++)
+            {
+                Index2D idx = new(row, col);
+                Color c0 = _buffer0[idx];
+                
+                // If buffer1 has this pixel, blend; otherwise use buffer0
+                if (row < _buffer1.Rows && col < _buffer1.Cols)
+                {
+                    Color c1 = _buffer1[new Index2D(row, col)];
+                    // Additive blend (clamped to 255)
+                    byte r = (byte)Math.Min(255, c0.Red + c1.Red);
+                    byte g = (byte)Math.Min(255, c0.Green + c1.Green);
+                    byte b = (byte)Math.Min(255, c0.Blue + c1.Blue);
+                    result[idx] = Color.RGB(r, g, b);
+                }
+                else
+                {
+                    result[idx] = c0;
+                }
+            }
+        }
+        
+        _colorsOutput.Invoke(result);
+    }
 }
 
 internal class MulticastEffect : BaseEffect
@@ -425,6 +473,105 @@ internal class MulticastEffect : BaseEffect
     {
         _colorsOutput0.Invoke(buffer);
         _colorsOutput1.Invoke(buffer);
+    }
+}
+
+internal class WhiteCircleEffect : BaseEffect
+{
+    private readonly OutputSlot<IReadOnlyBuffer2D<Color>> _colorsOutput;
+    private Buffer2D<Color> _colorBuffer;
+    
+    private IEffectContext? _context;
+    private TaskHandle? _renderTaskHandle;
+
+    private int _width;
+    private int _height;
+    private int _fps;
+    private int _radius;
+
+    public WhiteCircleEffect()
+    {
+        _colorsOutput = OutputSlots.RegisterOutput<IReadOnlyBuffer2D<Color>>("colorBuffer");
+
+        InputHandles.RegisterInput<int>("width", SetWidth);
+        InputHandles.RegisterInput<int>("height", SetHeight);
+        InputHandles.RegisterInput<int>("fps", SetFps);
+        InputHandles.RegisterInput<int>("radius", SetRadius);
+    }
+
+    public override void Initialize(IEffectContext context)
+    {
+        _context = context;
+        Restart();
+    }
+
+    private void Render()
+    {
+        // Clear buffer to black
+        for (int row = 0; row < _height; row++)
+        {
+            for (int col = 0; col < _width; col++)
+            {
+                _colorBuffer[new Index2D(row, col)] = Color.RGB(0, 0, 0);
+            }
+        }
+
+        // Calculate center of the buffer
+        double centerRow = _height / 2.0;
+        double centerCol = _width / 2.0;
+
+        // Draw white circle
+        for (int row = 0; row < _height; row++)
+        {
+            for (int col = 0; col < _width; col++)
+            {
+                double dx = col - centerCol;
+                double dy = row - centerRow;
+                double distance = Math.Sqrt(dx * dx + dy * dy);
+
+                if (distance <= _radius)
+                {
+                    _colorBuffer[new Index2D(row, col)] = Color.RGB(255, 255, 255);
+                }
+            }
+        }
+
+        _colorsOutput.Invoke(_colorBuffer);
+    }
+
+    private void Restart()
+    {
+        _renderTaskHandle?.Stop();
+        
+        if (_width <= 0 || _height <= 0 || _fps <= 0) return;
+        if (_context == null) return;
+        
+        _colorBuffer = new Buffer2D<Color>(_height, _width);
+        _renderTaskHandle = _context!.Scheduler.ScheduleTask(Render, _fps);
+    }
+
+    private void SetWidth(int width)
+    {
+        _width = width;
+        Restart();
+    }
+
+    private void SetHeight(int height)
+    {
+        _height = height;
+        Restart();
+    }
+
+    private void SetFps(int fps)
+    {
+        _fps = fps;
+        Restart();
+    }
+
+    private void SetRadius(int radius)
+    {
+        _radius = radius;
+        // No need to restart, just update the radius - next frame will use it
     }
 }
 

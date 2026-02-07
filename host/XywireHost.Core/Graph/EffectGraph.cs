@@ -73,6 +73,13 @@ public static class EffectNodeCatalog
             [new EmbeddedInputDescriptor("value", typeof(int))],
             () => new ConstantEffect<int>()),
         new(
+            "WhiteCircle",
+            "White Circle",
+            ["width", "height", "fps", "radius"],
+            ["colorBuffer"],
+            [],
+            () => new WhiteCircleEffect()),
+        new(
             "LedLine",
             "Led Line",
             ["colorBuffer"],
