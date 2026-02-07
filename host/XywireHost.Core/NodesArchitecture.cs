@@ -20,6 +20,7 @@ public interface IEffectContext
 
 public interface IEffectNodeInstance
 {
+    IReadOnlyDictionary<string, IUntypedInputHandle> EmbeddedInputs { get; }
     IReadOnlyDictionary<string, IUntypedInputHandle> Inputs { get; }
     IReadOnlyDictionary<string, IUntypedOutputSlot> Outputs { get; }
     void Initialize(IEffectContext context);
@@ -30,14 +31,17 @@ public class EffectContext : IEffectContext
     public Scheduler Scheduler { get; } = new();
 }
 
-public abstract class BaseEffect : IDataSource, IDataSink, IEffectNodeInstance
+public abstract class BaseEffect : IDataSink, IDataSource, IEffectNodeInstance
 {
-    private readonly EffectOutputsCollection _outputs = new();
+    private readonly EffectInputsCollection _embeddedInputs = new();
     private readonly EffectInputsCollection _inputs = new();
-    public IEffectInputsCollection InputHandles => _inputs;
+    private readonly EffectOutputsCollection _outputs = new();
 
+    public IEffectInputsCollection EmbeddedInputHandles => _embeddedInputs;
+    public IEffectInputsCollection InputHandles => _inputs;
     public IEffectOutputsCollection OutputSlots => _outputs;
 
+    public IReadOnlyDictionary<string, IUntypedInputHandle> EmbeddedInputs => _embeddedInputs.Entries;
     public IReadOnlyDictionary<string, IUntypedInputHandle> Inputs => _inputs.Entries;
     public IReadOnlyDictionary<string, IUntypedOutputSlot> Outputs => _outputs.Entries;
 
@@ -55,7 +59,7 @@ public abstract class BaseEffect : IDataSource, IDataSink, IEffectNodeInstance
         BindOutputs(outputSlot, inputHandle);
     }
 
-    private static void BindOutputs(IUntypedOutputSlot outputSlot, IUntypedInputHandle inputHandle)
+    public static void BindOutputs(IUntypedOutputSlot outputSlot, IUntypedInputHandle inputHandle)
     {
         if (inputHandle.IsConnected)
             throw new InvalidOperationException($"Input handle {inputHandle.Id} is already connected.");
@@ -74,12 +78,20 @@ public abstract class BaseEffect : IDataSource, IDataSink, IEffectNodeInstance
     }
 }
 
+// TODO ledline is actually just effect with system input for connection handle
 public sealed class LedLineNode : IDataSink, IEffectNodeInstance
 {
+    private static readonly IReadOnlyDictionary<string, IUntypedInputHandle> EmptyInputs =
+        new Dictionary<string, IUntypedInputHandle>();
     internal readonly EffectInputsCollection _inputs = new();
-
     private static readonly IReadOnlyDictionary<string, IUntypedOutputSlot> EmptyOutputs =
         new Dictionary<string, IUntypedOutputSlot>();
+
+    public IEffectInputsCollection InputHandles => _inputs;
+
+    public IReadOnlyDictionary<string, IUntypedInputHandle> EmbeddedInputs => EmptyInputs;
+    public IReadOnlyDictionary<string, IUntypedInputHandle> Inputs => _inputs.Entries;
+    public IReadOnlyDictionary<string, IUntypedOutputSlot> Outputs => EmptyOutputs;
 
     private readonly LedLine _ledLine;
     
@@ -89,11 +101,6 @@ public sealed class LedLineNode : IDataSink, IEffectNodeInstance
         
         _ledLine = ledLine;
     }
-
-    public IEffectInputsCollection InputHandles => _inputs;
-
-    public IReadOnlyDictionary<string, IUntypedInputHandle> Inputs => _inputs.Entries;
-    public IReadOnlyDictionary<string, IUntypedOutputSlot> Outputs => EmptyOutputs;
 
     public void Initialize(IEffectContext context)
     {
@@ -320,15 +327,35 @@ public class Scheduler
 internal class ConstantEffect<T> : BaseEffect
 {
     private readonly OutputSlot<T> _outputSlot;
-    private readonly T _value;
+    
+    private T? _value;
+    private bool _effectInitialized = false;
 
-    public ConstantEffect(T value)
+    public ConstantEffect()
     {
-        _value = value;
         _outputSlot = OutputSlots.RegisterOutput<T>("value");
+        EmbeddedInputHandles.RegisterInput<T>("value", SetValue);
     }
 
-    public override void Initialize(IEffectContext context) => _outputSlot.Invoke(_value);
+    public override void Initialize(IEffectContext context)
+    {
+        _effectInitialized = true;
+        
+        if (_value != null)
+        {
+            _outputSlot.Invoke(_value);
+        }
+    }
+
+    private void SetValue(T value)
+    {
+        _value = value;
+
+        if (_effectInitialized)
+        {
+            _outputSlot.Invoke(_value);
+        }
+    }
 }
 
 internal class RainbowEffect : BaseEffect
@@ -500,12 +527,23 @@ internal class User
         RainbowEffect rainbowEffect = CreateEffect(() => new RainbowEffect());
         rainbowEffect.BindOutputs("colorBuffer", "colorBuffer1", overlayEffect);
 
-        ConstantEffect<int> widthEffect = CreateEffect(() => new ConstantEffect<int>(14));
+        ConstantEffect<int> widthEffect = CreateEffect(() => new ConstantEffect<int>());
         widthEffect.BindOutputs("value", "width", rainbowEffect);
-        ConstantEffect<int> heightEffect = CreateEffect(() => new ConstantEffect<int>(14));
+        ConstantEffect<int> heightEffect = CreateEffect(() => new ConstantEffect<int>());
         heightEffect.BindOutputs("value", "height", rainbowEffect);
-        ConstantEffect<int> fpsEffect = CreateEffect(() => new ConstantEffect<int>(1));
+        ConstantEffect<int> fpsEffect = CreateEffect(() => new ConstantEffect<int>());
         fpsEffect.BindOutputs("value", "fps", rainbowEffect);
+        
+        EffectOutputsCollection systemOutputs = new();
+        
+        OutputSlot<int> widthOutput = systemOutputs.RegisterOutput<int>("value");
+        BaseEffect.BindOutputs(widthOutput, widthEffect.EmbeddedInputs["value"]);
+        
+        OutputSlot<int> heightOutput = systemOutputs.RegisterOutput<int>("value");
+        BaseEffect.BindOutputs(heightOutput, heightEffect.EmbeddedInputs["value"]);
+        
+        OutputSlot<int> fpsOutput = systemOutputs.RegisterOutput<int>("value");
+        BaseEffect.BindOutputs(fpsOutput, fpsEffect.EmbeddedInputs["value"]);
 
         foreach (BaseEffect effect in Effects)
         {
@@ -521,6 +559,10 @@ internal class User
         {
             effect.Initialize(context);
         }
+        
+        widthOutput.Invoke(14);
+        heightOutput.Invoke(14);
+        fpsOutput.Invoke(5);
 
         Console.ReadKey();
     }

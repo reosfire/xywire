@@ -10,14 +10,14 @@ public partial class NodeEditorPage : ContentPage
 {
     private readonly EffectService _effectService;
     
-    private readonly IReadOnlyList<NodeDefinition> _definitions;
+    private readonly List<NodeDefinition> _definitions;
     private readonly Dictionary<string, NodeDefinition> _definitionsByTypeId;
 
     public NodeEditorPage(EffectService effectService)
     {
-        _effectService = effectService;
-        
         InitializeComponent();
+        
+        _effectService = effectService;
 
         _definitions = EffectNodeCatalog.All
             .Select(descriptor => new NodeDefinition(

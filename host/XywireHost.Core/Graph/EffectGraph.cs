@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Reflection;
 using XywireHost.Core;
 using XywireHost.Core.core;
 
@@ -14,30 +15,20 @@ public sealed class EffectGraphModel
     public List<EffectGraphConnection> Connections { get; } = [];
 }
 
-public sealed class EffectNodeDescriptor
+public sealed class EffectNodeDescriptor(
+    string typeId,
+    string displayName,
+    IReadOnlyList<string> inputs,
+    IReadOnlyList<string> outputs,
+    Func<IEffectNodeInstance> createInstance,
+    Type? dataType = null)
 {
-    public EffectNodeDescriptor(
-        string typeId,
-        string displayName,
-        IReadOnlyList<string> inputs,
-        IReadOnlyList<string> outputs,
-        Func<object?, IEffectNodeInstance> createInstance,
-        Type? dataType = null)
-    {
-        TypeId = typeId;
-        DisplayName = displayName;
-        Inputs = inputs;
-        Outputs = outputs;
-        CreateInstance = createInstance;
-        DataType = dataType;
-    }
-
-    public string TypeId { get; }
-    public string DisplayName { get; }
-    public IReadOnlyList<string> Inputs { get; }
-    public IReadOnlyList<string> Outputs { get; }
-    public Func<object?, IEffectNodeInstance> CreateInstance { get; }
-    public Type? DataType { get; }
+    public string TypeId { get; } = typeId;
+    public string DisplayName { get; } = displayName;
+    public IReadOnlyList<string> Inputs { get; } = inputs;
+    public IReadOnlyList<string> Outputs { get; } = outputs;
+    public Func<IEffectNodeInstance> CreateInstance { get; } = createInstance;
+    public Type? DataType { get; } = dataType;
 }
 
 public static class EffectNodeCatalog
@@ -49,38 +40,38 @@ public static class EffectNodeCatalog
             "Rainbow",
             ["width", "height", "fps"],
             ["colorBuffer"],
-            _ => new RainbowEffect()),
+            () => new RainbowEffect()),
         new(
             "Cube",
             "Cube",
-            Array.Empty<string>(),
+            [],
             ["colorBuffer"],
-            _ => new CubeEffect()),
+            () => new CubeEffect()),
         new(
             "Overlay",
             "Overlay",
             ["colorBuffer0", "colorBuffer1"],
             ["colorBuffer"],
-            _ => new OverlayEffect()),
+            () => new OverlayEffect()),
         new(
             "Multicast",
             "Multicast",
             ["colorBuffer"],
             ["colorBuffer0", "colorBuffer1"],
-            _ => new MulticastEffect()),
+            () => new MulticastEffect()),
         new(
             "ConstantInt",
             "Constant (int)",
-            Array.Empty<string>(),
+            [],
             ["value"],
-            data => new ConstantEffect<int>(data is int value ? value : 0),
+            () => new ConstantEffect<int>(),
             typeof(int)),
         new(
             "LedLine",
             "Led Line",
             ["colorBuffer"],
             [],
-            data => new LedLineNode(data is LedLine value ? value : null)),
+            () => new LedLineNode(new("52"))),
     };
 
     private static readonly IReadOnlyDictionary<string, EffectNodeDescriptor> CatalogLookup =
@@ -89,7 +80,7 @@ public static class EffectNodeCatalog
     public static IReadOnlyList<EffectNodeDescriptor> All => Catalog;
 
     public static EffectNodeDescriptor? TryGet(string typeId) =>
-        CatalogLookup.TryGetValue(typeId, out EffectNodeDescriptor? descriptor) ? descriptor : null;
+        CatalogLookup.GetValueOrDefault(typeId);
 }
 
 public sealed class EffectGraphCompilationResult
@@ -111,7 +102,7 @@ public static class EffectGraphCompiler
 {
     public static EffectGraphCompilationResult Compile(EffectGraphModel graph, IEffectContext context)
     {
-        List<string> errors = new();
+        List<string> errors = [];
         Dictionary<Guid, IEffectNodeInstance> instances = new();
 
         foreach (EffectGraphNode node in graph.Nodes)
@@ -131,7 +122,7 @@ public static class EffectGraphCompiler
                 continue;
             }
 
-            IEffectNodeInstance instance = descriptor.CreateInstance(node.Data);
+            IEffectNodeInstance instance = descriptor.CreateInstance();
             instances[node.Id] = instance;
         }
 
