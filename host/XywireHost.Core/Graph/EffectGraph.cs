@@ -1,4 +1,3 @@
-using System.Collections.ObjectModel;
 using System.Reflection;
 using XywireHost.Core.core;
 
@@ -35,49 +34,110 @@ public sealed class EffectNodeDescriptor(
     public Func<IEffectNodeInstance> CreateInstance { get; } = createInstance;
 }
 
+public sealed class GenericEffectDescriptor(
+    string baseTypeId,
+    string displayName,
+    Type genericTypeDefinition,
+    int genericParameterCount)
+{
+    public string BaseTypeId { get; } = baseTypeId;
+    public string DisplayName { get; } = displayName;
+    public Type GenericTypeDefinition { get; } = genericTypeDefinition;
+    public int GenericParameterCount { get; } = genericParameterCount;
+    
+    public EffectNodeDescriptor MakeConcreteDescriptor(params Type[] typeArguments)
+    {
+        if (typeArguments.Length != GenericParameterCount)
+            throw new ArgumentException($"Expected {GenericParameterCount} type arguments, got {typeArguments.Length}");
+
+        Type closedType = GenericTypeDefinition.MakeGenericType(typeArguments);
+        string typeArgsString = string.Join(", ", typeArguments.Select(t => t.Name));
+        string typeId = $"{BaseTypeId}<{typeArgsString}>";
+        string name = $"{DisplayName}<{typeArgsString}>";
+
+        return EffectNodeCatalog.EffectTypeToDescriptor(closedType, typeId, name);
+    }
+}
+
 public sealed record EmbeddedInputDescriptor(string Name, Type ValueType);
+
+public sealed record AvailableTypeDescriptor(string DisplayName, Type Type);
 
 public static class EffectNodeCatalog
 {
-    public static IReadOnlyList<EffectNodeDescriptor> All { get; } = 
-        GetDescriptorsFromAssembly(Assembly.GetExecutingAssembly());
+    public static IReadOnlyList<AvailableTypeDescriptor> AvailableGenericTypes { get; } =
+    [
+        new("int", typeof(int)),
+        new("float", typeof(float)),
+        new("double", typeof(double)),
+        new("bool", typeof(bool)),
+        new("string", typeof(string)),
+        new("Color", typeof(Color)),
+        new("LedLine", typeof(LedLine)),
+    ];
+
+    private static readonly Dictionary<string, EffectNodeDescriptor> ConcreteDescriptors = new();
+    private static readonly List<GenericEffectDescriptor> GenericDescriptors = [];
+
+    static EffectNodeCatalog()
+    {
+        LoadFromAssembly(Assembly.GetExecutingAssembly());
+    }
     
-    private static readonly IReadOnlyDictionary<string, EffectNodeDescriptor> CatalogLookup =
-        new ReadOnlyDictionary<string, EffectNodeDescriptor>(All.ToDictionary(node => node.TypeId));
+    public static IReadOnlyList<EffectNodeDescriptor> All => ConcreteDescriptors.Values.ToList();
+    public static IReadOnlyList<GenericEffectDescriptor> AllGeneric => GenericDescriptors;
 
     public static EffectNodeDescriptor? TryGet(string typeId) =>
-        CatalogLookup.GetValueOrDefault(typeId);
-
-    private static List<EffectNodeDescriptor> GetDescriptorsFromAssembly(Assembly assembly)
+        ConcreteDescriptors.GetValueOrDefault(typeId);
+    
+    public static void RegisterConcreteDescriptor(EffectNodeDescriptor descriptor)
     {
-        List<EffectNodeDescriptor> descriptors = [];
+        ConcreteDescriptors[descriptor.TypeId] = descriptor;
+    }
 
+    private static void LoadFromAssembly(Assembly assembly)
+    {
         foreach (Type type in assembly.GetTypes())
         {
             if (!typeof(BaseEffect).IsAssignableFrom(type) || type.IsAbstract) continue;
-            
-            EffectNodeDescriptor descriptor = EffectTypeToDescriptor(type);
-            descriptors.Add(descriptor);
-        }
 
-        return descriptors;
+            if (type.IsGenericTypeDefinition)
+            {
+                // Generic type - add to generic descriptors
+                GenericEffectDescriptor genericDescriptor = new(
+                    type.Name.Split('`')[0], // Remove `1, `2 etc. suffix
+                    type.Name.Split('`')[0],
+                    type,
+                    type.GetGenericArguments().Length
+                );
+                GenericDescriptors.Add(genericDescriptor);
+            }
+            else
+            {
+                // Concrete type - create descriptor and add to catalog
+                EffectNodeDescriptor descriptor = EffectTypeToDescriptor(type, type.Name, type.Name);
+                ConcreteDescriptors[descriptor.TypeId] = descriptor;
+            }
+        }
     }
-    
-    private static EffectNodeDescriptor EffectTypeToDescriptor(Type type)
+
+    internal static EffectNodeDescriptor EffectTypeToDescriptor(Type type, string typeId, string displayName)
     {
-        object? createdInstance = Activator.CreateInstance(type, [type]);
+        object? createdInstance = Activator.CreateInstance(type);
         if (createdInstance is BaseEffect effectInstance)
         {
             return new EffectNodeDescriptor(
-                type.Name,
-                type.Name,
+                typeId,
+                displayName,
                 effectInstance.Inputs.Keys.ToList(),
                 effectInstance.Outputs.Keys.ToList(),
-                effectInstance.EmbeddedInputs.Select(ei => new EmbeddedInputDescriptor(ei.Key, ei.Value.ValueType)).ToList(),
+                effectInstance.EmbeddedInputs
+                    .Select(ei => new EmbeddedInputDescriptor(ei.Key, ei.Value.ValueType))
+                    .ToList(),
                 () => (IEffectNodeInstance)Activator.CreateInstance(type)!
             );
         }
-        
+
         throw new InvalidOperationException($"Type {type.Name} is not a valid effect type.");
     }
 }

@@ -521,10 +521,6 @@ internal class WhiteCircleEffect : BaseEffect
                 {
                     _colorBuffer[new Index2D(row, col)] = Color.RGB(255, 255, 255);
                 }
-                else
-                {
-                    _colorBuffer[new Index2D(row, col)] = Color.RGB(255, 255, 255) * sdfValue;
-                }
             }
         }
 

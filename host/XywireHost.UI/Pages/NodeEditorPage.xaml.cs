@@ -8,33 +8,44 @@ using XywireHost.UI.Controls;
 
 namespace XywireHost.UI.Pages;
 
+public abstract record NodePickerItem(string DisplayName);
+public sealed record ConcreteNodePickerItem(string DisplayName, NodeDefinition Definition) : NodePickerItem(DisplayName);
+public sealed record GenericNodePickerItem(string DisplayName, GenericEffectDescriptor GenericDescriptor) : NodePickerItem(DisplayName);
+
 public partial class NodeEditorPage : ContentPage
 {
     private readonly EffectService _effectService;
 
-    private readonly List<NodeDefinition> _definitions;
-    private readonly Dictionary<string, NodeDefinition> _definitionsByTypeId;
+    private readonly List<NodePickerItem> _pickerItems = [];
+    private readonly Dictionary<string, NodeDefinition> _definitionsByTypeId = new();
 
     public NodeEditorPage(EffectService effectService)
     {
         InitializeComponent();
 
         _effectService = effectService;
-
-        _definitions = EffectNodeCatalog.All
-            .Select(descriptor => new NodeDefinition(
-                descriptor.TypeId,
-                descriptor.DisplayName,
-                descriptor.Inputs,
-                descriptor.Outputs,
-                descriptor.EmbeddedInputs
-                    .Select(e => new EmbeddedInputInfo(e.Name, e.ValueType))
-                    .ToList()))
+        
+        foreach (EffectNodeDescriptor descriptor in EffectNodeCatalog.All)
+        {
+            NodeDefinition definition = DescriptorToDefinition(descriptor);
+            _definitionsByTypeId[definition.TypeId] = definition;
+            _pickerItems.Add(new ConcreteNodePickerItem(descriptor.DisplayName, definition));
+        }
+        
+        foreach (GenericEffectDescriptor genericDescriptor in EffectNodeCatalog.AllGeneric)
+        {
+            _pickerItems.Add(new GenericNodePickerItem($"{genericDescriptor.DisplayName}<T>", genericDescriptor));
+        }
+        
+        GenericTypePicker.ItemsSource = EffectNodeCatalog.AvailableGenericTypes
+            .Select(t => t.DisplayName)
             .ToList();
+        if (GenericTypePicker.ItemsSource.Count > 0)
+        {
+            GenericTypePicker.SelectedIndex = 0;
+        }
 
-        _definitionsByTypeId = _definitions.ToDictionary(definition => definition.TypeId);
-
-        NodePicker.ItemsSource = _definitions.Select(definition => definition.Name).ToList();
+        NodePicker.ItemsSource = _pickerItems.Select(item => item.DisplayName).ToList();
         if (NodePicker.ItemsSource.Count > 0)
         {
             NodePicker.SelectedIndex = 0;
@@ -43,13 +54,43 @@ public partial class NodeEditorPage : ContentPage
         SeedSampleGraph();
     }
 
+    private static NodeDefinition DescriptorToDefinition(EffectNodeDescriptor descriptor)
+    {
+        return new NodeDefinition(
+            descriptor.TypeId,
+            descriptor.DisplayName,
+            descriptor.Inputs,
+            descriptor.Outputs,
+            descriptor.EmbeddedInputs
+                .Select(e => new EmbeddedInputInfo(e.Name, e.ValueType))
+                .ToList());
+    }
+
+    private void OnNodePickerSelectionChanged(object? sender, EventArgs e)
+    {
+        NodePickerItem? selectedItem = GetSelectedPickerItem();
+        GenericTypePicker.IsVisible = selectedItem is GenericNodePickerItem;
+    }
+
+    private NodePickerItem? GetSelectedPickerItem()
+    {
+        if (NodePicker.SelectedIndex < 0 || NodePicker.SelectedIndex >= _pickerItems.Count)
+            return null;
+        return _pickerItems[NodePicker.SelectedIndex];
+    }
+
     private void SeedSampleGraph()
     {
-        if (!TryGetDefinition("ConstantInt", out NodeDefinition? constantInt) ||
-            !TryGetDefinition("Rainbow", out NodeDefinition? rainbow) ||
-            !TryGetDefinition("WhiteCircle", out NodeDefinition? whiteCircle) ||
-            !TryGetDefinition("Overlay", out NodeDefinition? overlay) ||
-            !TryGetDefinition("LedLine", out NodeDefinition? ledLine))
+        // First, ensure we have a ConstantEffect<Int32> in the catalog
+        EnsureGenericEffectRegistered("ConstantEffect", typeof(int));
+        
+        // Use Type.Name for lookup (Int32, not int)
+        string intTypeName = typeof(int).Name; // "Int32"
+        if (!TryGetDefinition($"ConstantEffect<{intTypeName}>", out NodeDefinition? constantInt) ||
+            !TryGetDefinition("RainbowEffect", out NodeDefinition? rainbow) ||
+            !TryGetDefinition("WhiteCircleEffect", out NodeDefinition? whiteCircle) ||
+            !TryGetDefinition("OverlayEffect", out NodeDefinition? overlay) ||
+            !TryGetDefinition("LedLineEffect", out NodeDefinition? ledLine))
         {
             return;
         }
@@ -69,14 +110,69 @@ public partial class NodeEditorPage : ContentPage
             new NodePortReference(fps.Id, "value", false),
             new NodePortReference(output.Id, "fps", true));
     }
+    
+    private void EnsureGenericEffectRegistered(string baseTypeId, params Type[] typeArguments)
+    {
+        string typeArgsString = string.Join(", ", typeArguments.Select(t => t.Name));
+        string typeId = $"{baseTypeId}<{typeArgsString}>";
+        
+        if (_definitionsByTypeId.ContainsKey(typeId))
+            return;
+        
+        GenericEffectDescriptor? genericDescriptor = EffectNodeCatalog.AllGeneric
+            .FirstOrDefault(g => g.BaseTypeId == baseTypeId);
+
+        if (genericDescriptor == null)
+            return;
+        
+        EffectNodeDescriptor concreteDescriptor = genericDescriptor.MakeConcreteDescriptor(typeArguments);
+        EffectNodeCatalog.RegisterConcreteDescriptor(concreteDescriptor);
+
+        NodeDefinition definition = DescriptorToDefinition(concreteDescriptor);
+        _definitionsByTypeId[definition.TypeId] = definition;
+    }
 
     private async void OnAddNodeClicked(object sender, EventArgs e)
     {
-        NodeDefinition? definition = GetSelectedDefinition();
-        if (definition == null)
+        NodePickerItem? selectedItem = GetSelectedPickerItem();
+        if (selectedItem == null)
         {
             await DisplayAlert("Add Node", "Select a node type first.", "OK");
             return;
+        }
+
+        NodeDefinition? definition;
+
+        switch (selectedItem)
+        {
+            case ConcreteNodePickerItem concreteItem:
+                definition = concreteItem.Definition;
+                break;
+
+            case GenericNodePickerItem genericItem:
+                // Get selected type argument
+                if (GenericTypePicker.SelectedIndex < 0)
+                {
+                    await DisplayAlert("Add Node", "Select a type parameter first.", "OK");
+                    return;
+                }
+
+                AvailableTypeDescriptor selectedType = EffectNodeCatalog.AvailableGenericTypes[GenericTypePicker.SelectedIndex];
+                
+                // Ensure the concrete version is registered
+                EnsureGenericEffectRegistered(genericItem.GenericDescriptor.BaseTypeId, selectedType.Type);
+                
+                string typeId = $"{genericItem.GenericDescriptor.BaseTypeId}<{selectedType.Type.Name}>";
+                if (!_definitionsByTypeId.TryGetValue(typeId, out definition))
+                {
+                    await DisplayAlert("Add Node", "Failed to create generic effect.", "OK");
+                    return;
+                }
+                break;
+
+            default:
+                await DisplayAlert("Add Node", "Unknown node type.", "OK");
+                return;
         }
 
         float offset = 30f * NodesView.Nodes.Count;
@@ -118,14 +214,12 @@ public partial class NodeEditorPage : ContentPage
 
         foreach (NodeInstance node in NodesView.Nodes)
         {
-            // Copy embedded input values, applying system-provided values where needed
             Dictionary<string, object?>? embeddedValues = null;
 
             if (node.EmbeddedInputs.Count > 0)
             {
                 embeddedValues = new Dictionary<string, object?>(node.EmbeddedInputValues);
-
-                // Apply system-provided values for specific types
+                
                 foreach (EmbeddedInputInfo embeddedInput in node.EmbeddedInputs)
                 {
                     if (embeddedInput.ValueType == typeof(LedLine) &&
@@ -159,15 +253,6 @@ public partial class NodeEditorPage : ContentPage
     private bool TryGetDefinition(string typeId, [MaybeNullWhen(false)] out NodeDefinition definition) =>
         _definitionsByTypeId.TryGetValue(typeId, out definition);
 
-    private NodeDefinition? GetSelectedDefinition()
-    {
-        if (NodePicker.SelectedIndex < 0 || NodePicker.SelectedIndex >= _definitions.Count)
-        {
-            return null;
-        }
-
-        return _definitions[NodePicker.SelectedIndex];
-    }
 
     private void OnNodeSelectionChanged(object? sender, NodeSelectionChangedEventArgs e)
     {

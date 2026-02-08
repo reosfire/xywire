@@ -14,7 +14,12 @@
             <HorizontalStackLayout Spacing="8">
                 <Picker x:Name="NodePicker"
                         Title="Add node"
-                        HorizontalOptions="FillAndExpand" />
+                        HorizontalOptions="FillAndExpand"
+                        SelectedIndexChanged="OnNodePickerSelectionChanged" />
+                <Picker x:Name="GenericTypePicker"
+                        Title="Type"
+                        IsVisible="False"
+                        WidthRequest="100" />
                 <Button Text="Add"
                         Clicked="OnAddNodeClicked" />
                 <Button Text="Remove"
