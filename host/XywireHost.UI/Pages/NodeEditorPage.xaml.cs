@@ -9,34 +9,41 @@ using XywireHost.UI.Controls;
 namespace XywireHost.UI.Pages;
 
 public abstract record NodePickerItem(string DisplayName);
-public sealed record ConcreteNodePickerItem(string DisplayName, NodeDefinition Definition) : NodePickerItem(DisplayName);
-public sealed record GenericNodePickerItem(string DisplayName, GenericEffectDescriptor GenericDescriptor) : NodePickerItem(DisplayName);
+public sealed record ConcreteNodePickerItem(string DisplayName, ConcreteEffectDescriptor Prototype)
+    : NodePickerItem(DisplayName);
+public sealed record GenericNodePickerItem(string DisplayName, GenericEffectDescriptor GenericDescriptor)
+    : NodePickerItem(DisplayName);
+
+public record Payload(
+    Dictionary<string, object?> EmbeddedInputValues,
+    Dictionary<string, EmbeddedInputInfo> EmbeddedInputs,
+    string TypeId
+);
+
+public readonly record struct EmbeddedInputInfo(string Name, Type ValueType);
 
 public partial class NodeEditorPage : ContentPage
 {
     private readonly EffectService _effectService;
 
     private readonly List<NodePickerItem> _pickerItems = [];
-    private readonly Dictionary<string, NodeDefinition> _definitionsByTypeId = new();
 
     public NodeEditorPage(EffectService effectService)
     {
         InitializeComponent();
 
         _effectService = effectService;
-        
-        foreach (EffectNodeDescriptor descriptor in EffectNodeCatalog.All)
+
+        foreach (ConcreteEffectDescriptor descriptor in EffectNodeCatalog.All)
         {
-            NodeDefinition definition = DescriptorToDefinition(descriptor);
-            _definitionsByTypeId[definition.TypeId] = definition;
-            _pickerItems.Add(new ConcreteNodePickerItem(descriptor.DisplayName, definition));
+            _pickerItems.Add(new ConcreteNodePickerItem(descriptor.DisplayName, descriptor));
         }
-        
+
         foreach (GenericEffectDescriptor genericDescriptor in EffectNodeCatalog.AllGeneric)
         {
             _pickerItems.Add(new GenericNodePickerItem($"{genericDescriptor.DisplayName}<T>", genericDescriptor));
         }
-        
+
         GenericTypePicker.ItemsSource = EffectNodeCatalog.AvailableGenericTypes
             .Select(t => t.DisplayName)
             .ToList();
@@ -54,99 +61,94 @@ public partial class NodeEditorPage : ContentPage
         SeedSampleGraph();
     }
 
-    private static NodeDefinition DescriptorToDefinition(EffectNodeDescriptor descriptor)
-    {
-        return new NodeDefinition(
-            descriptor.TypeId,
-            descriptor.DisplayName,
-            descriptor.Inputs,
-            descriptor.Outputs,
-            descriptor.EmbeddedInputs
-                .Select(e => new EmbeddedInputInfo(e.Name, e.ValueType))
-                .ToList());
-    }
-
     private void OnNodePickerSelectionChanged(object? sender, EventArgs e)
     {
-        NodePickerItem? selectedItem = GetSelectedPickerItem();
+        NodePickerItem? selectedItem = GetSelectedNodePickerItem();
         GenericTypePicker.IsVisible = selectedItem is GenericNodePickerItem;
     }
 
-    private NodePickerItem? GetSelectedPickerItem()
+    private NodePickerItem? GetSelectedNodePickerItem()
     {
         if (NodePicker.SelectedIndex < 0 || NodePicker.SelectedIndex >= _pickerItems.Count)
             return null;
         return _pickerItems[NodePicker.SelectedIndex];
     }
 
+    private NodeInstance<Payload> CreateNodeFromDescriptor(ConcreteEffectDescriptor prototype, SKPoint position)
+    {
+        return NodesView.AddNode(
+            position: position,
+            prototype.DisplayName,
+            prototype.EmbeddedInputs.Select(e => e.Name).ToList(),
+            prototype.Inputs.ToList(),
+            prototype.Outputs.ToList(),
+            new Payload(
+                new Dictionary<string, object?>(),
+                prototype.EmbeddedInputs.ToDictionary(e => e.Name, e => new EmbeddedInputInfo(e.Name, e.ValueType)),
+                prototype.TypeId
+            )
+        );
+    }
+
     private void SeedSampleGraph()
     {
         // First, ensure we have a ConstantEffect<Int32> in the catalog
         EnsureGenericEffectRegistered("ConstantEffect", typeof(int));
-        
+
         // Use Type.Name for lookup (Int32, not int)
         string intTypeName = typeof(int).Name; // "Int32"
-        if (!TryGetDefinition($"ConstantEffect<{intTypeName}>", out NodeDefinition? constantInt) ||
-            !TryGetDefinition("RainbowEffect", out NodeDefinition? rainbow) ||
-            !TryGetDefinition("WhiteCircleEffect", out NodeDefinition? whiteCircle) ||
-            !TryGetDefinition("OverlayEffect", out NodeDefinition? overlay) ||
-            !TryGetDefinition("LedLineEffect", out NodeDefinition? ledLine))
+        if (!TryGetDefinition($"ConstantEffect<{intTypeName}>", out ConcreteEffectDescriptor? constantInt) ||
+            !TryGetDefinition("RainbowEffect", out ConcreteEffectDescriptor? rainbow) ||
+            !TryGetDefinition("WhiteCircleEffect", out ConcreteEffectDescriptor? whiteCircle) ||
+            !TryGetDefinition("OverlayEffect", out ConcreteEffectDescriptor? overlay) ||
+            !TryGetDefinition("LedLineEffect", out ConcreteEffectDescriptor? ledLine))
         {
             return;
         }
 
-        NodeInstance width = NodesView.AddNode(constantInt, new SKPoint(40, 40));
-        NodeInstance height = NodesView.AddNode(constantInt, new SKPoint(40, 160));
-        NodeInstance fps = NodesView.AddNode(constantInt, new SKPoint(40, 280));
-        NodeInstance output = NodesView.AddNode(rainbow, new SKPoint(320, 120));
+        NodeInstance<Payload> width = CreateNodeFromDescriptor(constantInt, new SKPoint(40, 40));
+        NodeInstance<Payload> height = CreateNodeFromDescriptor(constantInt, new SKPoint(40, 160));
+        NodeInstance<Payload> fps = CreateNodeFromDescriptor(constantInt, new SKPoint(40, 280));
+        NodeInstance<Payload> output = CreateNodeFromDescriptor(rainbow, new SKPoint(320, 120));
 
-        NodesView.TryAddConnection(
-            new NodePortReference(width.Id, "value", false),
-            new NodePortReference(output.Id, "width", true));
-        NodesView.TryAddConnection(
-            new NodePortReference(height.Id, "value", false),
-            new NodePortReference(output.Id, "height", true));
-        NodesView.TryAddConnection(
-            new NodePortReference(fps.Id, "value", false),
-            new NodePortReference(output.Id, "fps", true));
+        NodesView.AddConnection(
+            new PortReference(width.Id, "value", PortType.Output),
+            new PortReference(output.Id, "width", PortType.Input));
+        NodesView.AddConnection(
+            new PortReference(height.Id, "value", PortType.Output),
+            new PortReference(output.Id, "height", PortType.Input));
+        NodesView.AddConnection(
+            new PortReference(fps.Id, "value", PortType.Output),
+            new PortReference(output.Id, "fps", PortType.Input));
     }
-    
+
     private void EnsureGenericEffectRegistered(string baseTypeId, params Type[] typeArguments)
     {
-        string typeArgsString = string.Join(", ", typeArguments.Select(t => t.Name));
-        string typeId = $"{baseTypeId}<{typeArgsString}>";
-        
-        if (_definitionsByTypeId.ContainsKey(typeId))
-            return;
-        
         GenericEffectDescriptor? genericDescriptor = EffectNodeCatalog.AllGeneric
             .FirstOrDefault(g => g.BaseTypeId == baseTypeId);
 
         if (genericDescriptor == null)
             return;
-        
-        EffectNodeDescriptor concreteDescriptor = genericDescriptor.MakeConcreteDescriptor(typeArguments);
-        EffectNodeCatalog.RegisterConcreteDescriptor(concreteDescriptor);
 
-        NodeDefinition definition = DescriptorToDefinition(concreteDescriptor);
-        _definitionsByTypeId[definition.TypeId] = definition;
+        ConcreteEffectDescriptor concreteDescriptor = genericDescriptor.MakeConcreteDescriptor(typeArguments);
+        EffectNodeCatalog.RegisterConcreteDescriptor(concreteDescriptor);
     }
 
     private async void OnAddNodeClicked(object sender, EventArgs e)
     {
-        NodePickerItem? selectedItem = GetSelectedPickerItem();
+        NodePickerItem? selectedItem = GetSelectedNodePickerItem();
         if (selectedItem == null)
         {
             await DisplayAlert("Add Node", "Select a node type first.", "OK");
             return;
         }
 
-        NodeDefinition? definition;
+        ConcreteEffectDescriptor? definition;
 
         switch (selectedItem)
         {
             case ConcreteNodePickerItem concreteItem:
-                definition = concreteItem.Definition;
+                definition = concreteItem.Prototype;
                 break;
 
             case GenericNodePickerItem genericItem:
@@ -157,17 +159,20 @@ public partial class NodeEditorPage : ContentPage
                     return;
                 }
 
-                AvailableTypeDescriptor selectedType = EffectNodeCatalog.AvailableGenericTypes[GenericTypePicker.SelectedIndex];
-                
+                AvailableTypeDescriptor selectedType =
+                    EffectNodeCatalog.AvailableGenericTypes[GenericTypePicker.SelectedIndex];
+
                 // Ensure the concrete version is registered
                 EnsureGenericEffectRegistered(genericItem.GenericDescriptor.BaseTypeId, selectedType.Type);
-                
+
                 string typeId = $"{genericItem.GenericDescriptor.BaseTypeId}<{selectedType.Type.Name}>";
-                if (!_definitionsByTypeId.TryGetValue(typeId, out definition))
+                
+                if (!TryGetDefinition(typeId, out definition))
                 {
                     await DisplayAlert("Add Node", "Failed to create generic effect.", "OK");
                     return;
                 }
+
                 break;
 
             default:
@@ -177,7 +182,7 @@ public partial class NodeEditorPage : ContentPage
 
         float offset = 30f * NodesView.Nodes.Count;
         SKPoint position = new(40f + offset % 240f, 80f + offset % 160f);
-        NodesView.AddNode(definition, position);
+        CreateNodeFromDescriptor(definition, position);
     }
 
     private async void OnRemoveNodeClicked(object sender, EventArgs e)
@@ -212,15 +217,15 @@ public partial class NodeEditorPage : ContentPage
     {
         EffectGraphModel model = new();
 
-        foreach (NodeInstance node in NodesView.Nodes)
+        foreach (NodeInstance<Payload> node in NodesView.Nodes.Values)
         {
             Dictionary<string, object?>? embeddedValues = null;
 
             if (node.EmbeddedInputs.Count > 0)
             {
-                embeddedValues = new Dictionary<string, object?>(node.EmbeddedInputValues);
-                
-                foreach (EmbeddedInputInfo embeddedInput in node.EmbeddedInputs)
+                embeddedValues = new Dictionary<string, object?>(node.Payload.EmbeddedInputValues);
+
+                foreach (EmbeddedInputInfo embeddedInput in node.Payload.EmbeddedInputs.Values)
                 {
                     if (embeddedInput.ValueType == typeof(LedLine) &&
                         !embeddedValues.ContainsKey(embeddedInput.Name))
@@ -230,28 +235,41 @@ public partial class NodeEditorPage : ContentPage
                 }
             }
 
-            model.Nodes.Add(new EffectGraphNode(
-                node.Id,
-                node.TypeId,
-                node.Position.X,
-                node.Position.Y,
-                embeddedValues));
+            model.Nodes.Add(
+                new EffectGraphNode(
+                    node.Id,
+                    node.Payload.TypeId,
+                    node.Position.X,
+                    node.Position.Y,
+                    embeddedValues)
+            );
         }
 
-        foreach (NodeConnection connection in NodesView.Connections)
+        foreach ((int fromNodeId, INodeInstance fromNode) in NodesView.Nodes)
         {
-            model.Connections.Add(new EffectGraphConnection(
-                connection.FromNodeId,
-                connection.FromPort,
-                connection.ToNodeId,
-                connection.ToPort));
+            foreach ((string fromPort, PortReference? toPort) in fromNode.Outputs)
+            {
+                if (toPort is null) continue;
+                
+                model.Connections.Add(
+                    new EffectGraphConnection(
+                        fromNodeId,
+                        fromPort,
+                        toPort.Value.NodeId,
+                        toPort.Value.PortId
+                    )
+                );
+            }
         }
 
         return model;
     }
 
-    private bool TryGetDefinition(string typeId, [MaybeNullWhen(false)] out NodeDefinition definition) =>
-        _definitionsByTypeId.TryGetValue(typeId, out definition);
+    private static bool TryGetDefinition(string typeId, [MaybeNullWhen(false)] out ConcreteEffectDescriptor definition)
+    {
+        definition = EffectNodeCatalog.TryGet(typeId);
+        return definition != null;
+    }
 
 
     private void OnNodeSelectionChanged(object? sender, NodeSelectionChangedEventArgs e)
@@ -264,34 +282,29 @@ public partial class NodeEditorPage : ContentPage
             return;
         }
 
-        NodeInstance node = e.SelectedNode;
+        NodeInstance<Payload> node = e.SelectedNode as NodeInstance<Payload>;
         SelectedNodeLabel.Text = node.Title;
 
-        foreach (EmbeddedInputInfo embeddedInput in node.EmbeddedInputs)
+        foreach (EmbeddedInputInfo embeddedInput in node.Payload.EmbeddedInputs.Values)
         {
-            View? editor = CreateEditorForType(node, embeddedInput);
-            if (editor != null)
+            View editor = CreateEditorForType(node, embeddedInput.ValueType, embeddedInput.Name);
+            
+            VerticalStackLayout inputLayout = new() { Spacing = 4 };
+            inputLayout.Children.Add(new Label
             {
-                VerticalStackLayout inputLayout = new() { Spacing = 4 };
-                inputLayout.Children.Add(new Label
-                {
-                    Text = embeddedInput.Name, FontSize = 12, TextColor = Colors.Gray,
-                });
-                inputLayout.Children.Add(editor);
-                EmbeddedInputsContainer.Children.Add(inputLayout);
-            }
+                Text = embeddedInput.Name, FontSize = 12, TextColor = Colors.Gray,
+            });
+            inputLayout.Children.Add(editor);
+            EmbeddedInputsContainer.Children.Add(inputLayout);
         }
 
         EmbeddedInputsPanel.IsVisible = EmbeddedInputsContainer.Children.Count > 0;
     }
 
-    private View? CreateEditorForType(NodeInstance node, EmbeddedInputInfo embeddedInput)
+    private static View CreateEditorForType(NodeInstance<Payload> node, Type valueType, string inputName)
     {
-        Type valueType = embeddedInput.ValueType;
-        string inputName = embeddedInput.Name;
-
         // Get current value
-        node.EmbeddedInputValues.TryGetValue(inputName, out object? currentValue);
+        node.Payload.EmbeddedInputValues.TryGetValue(inputName, out object? currentValue);
 
         if (valueType == typeof(int))
         {
@@ -306,14 +319,14 @@ public partial class NodeEditorPage : ContentPage
             {
                 if (int.TryParse(args.NewTextValue, out int intValue))
                 {
-                    node.EmbeddedInputValues[inputName] = intValue;
+                    node.Payload.EmbeddedInputValues[inputName] = intValue;
                 }
             };
 
             // Initialize with default value if not set
             if (currentValue == null && int.TryParse(entry.Text, out int defaultValue))
             {
-                node.EmbeddedInputValues[inputName] = defaultValue;
+                node.Payload.EmbeddedInputValues[inputName] = defaultValue;
             }
 
             return entry;
@@ -332,7 +345,7 @@ public partial class NodeEditorPage : ContentPage
             {
                 if (float.TryParse(args.NewTextValue, out float floatValue))
                 {
-                    node.EmbeddedInputValues[inputName] = floatValue;
+                    node.Payload.EmbeddedInputValues[inputName] = floatValue;
                 }
             };
 
@@ -352,7 +365,7 @@ public partial class NodeEditorPage : ContentPage
             {
                 if (double.TryParse(args.NewTextValue, out double doubleValue))
                 {
-                    node.EmbeddedInputValues[inputName] = doubleValue;
+                    node.Payload.EmbeddedInputValues[inputName] = doubleValue;
                 }
             };
 
@@ -365,7 +378,7 @@ public partial class NodeEditorPage : ContentPage
 
             entry.TextChanged += (_, args) =>
             {
-                node.EmbeddedInputValues[inputName] = args.NewTextValue;
+                node.Payload.EmbeddedInputValues[inputName] = args.NewTextValue;
             };
 
             return entry;
@@ -377,13 +390,12 @@ public partial class NodeEditorPage : ContentPage
 
             toggle.Toggled += (_, args) =>
             {
-                node.EmbeddedInputValues[inputName] = args.Value;
+                node.Payload.EmbeddedInputValues[inputName] = args.Value;
             };
 
             return toggle;
         }
-
-        // For complex types like LedLine, show a label indicating it's system-provided
+        
         return new Label
         {
             Text = "(System provided)",

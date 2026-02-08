@@ -14,7 +14,7 @@ public sealed class NodesCanvasView : SKCanvasView
     private const float MinZoom = 0.2f;
     private const float MaxZoom = 3.0f;
 
-    private readonly Dictionary<Guid, NodeLayout> _layouts = new();
+    private readonly Dictionary<int, NodeLayout> _layouts = new();
 
     private readonly SKPaint _titlePaint = new() { Color = SKColors.White, TextSize = 15f, IsAntialias = true };
 
@@ -50,94 +50,156 @@ public sealed class NodesCanvasView : SKCanvasView
         Touch += OnTouch;
     }
 
-    public IList<NodeInstance> Nodes { get; } = new List<NodeInstance>();
-    public IList<NodeConnection> Connections { get; } = new List<NodeConnection>();
+    private int _currentNodeId = 0;
+    public Dictionary<int, INodeInstance> Nodes { get; } = [];
 
-    public Guid? SelectedNodeId { get; private set; }
+    public int? SelectedNodeId { get; private set; }
 
     public event EventHandler<NodeSelectionChangedEventArgs>? SelectionChanged;
 
-    public NodeInstance AddNode(NodeDefinition definition, SKPoint position)
+    public NodeInstance<T> AddNode<T>(
+        SKPoint position,
+        string title,
+        List<string> embeddedInputs,
+        List<string> inputPortLabels,
+        List<string> outputPortLabels,
+        T payload)
     {
-        NodeInstance node = new(definition, position);
-        Nodes.Add(node);
+        NodeInstance<T> node = new(
+            id: _currentNodeId++,
+            position: position,
+            title: title,
+            embeddedInputs: embeddedInputs,
+            inputs: inputPortLabels.ToDictionary(label => label, _ => (PortReference?)null),
+            outputs: outputPortLabels.ToDictionary(label => label, _ => (PortReference?)null),
+            payload: payload
+        );
+
+        Nodes[node.Id] = node;
         SetSelectedNode(node.Id);
+
         InvalidateSurface();
         return node;
     }
 
-    public void RemoveNode(Guid nodeId)
+    public void RemoveNode(int nodeId)
     {
-        NodeInstance? node = Nodes.FirstOrDefault(n => n.Id == nodeId);
-        if (node == null)
+        INodeInstance node = Nodes[nodeId];
+        
+        foreach ((string _, PortReference? nullablePort) in node.Inputs)
         {
-            return;
+            if (nullablePort is not { } connectedPort) continue;
+            
+            INodeInstance connectedNode = Nodes[connectedPort.NodeId];
+            connectedNode.Outputs[connectedPort.PortId] = null;
         }
-
-        Nodes.Remove(node);
-        for (int i = Connections.Count - 1; i >= 0; i--)
+        
+        foreach ((string _, PortReference? nullablePort) in node.Outputs)
         {
-            NodeConnection connection = Connections[i];
-            if (connection.FromNodeId == nodeId || connection.ToNodeId == nodeId)
-            {
-                Connections.RemoveAt(i);
-            }
+            if (nullablePort is not { } connectedPort) continue;
+            
+            INodeInstance connectedNode = Nodes[connectedPort.NodeId];
+            connectedNode.Inputs[connectedPort.PortId] = null;
         }
+        
+        Nodes.Remove(nodeId);
 
         ClearSelection();
         InvalidateSurface();
     }
 
-    public bool TryAddConnection(NodePortReference output, NodePortReference input)
+    public void AddConnection(PortReference outputPort, PortReference inputPort)
     {
-        if (output.IsInput || !input.IsInput)
+        if (!Nodes.TryGetValue(outputPort.NodeId, out INodeInstance? outputNode))
+            throw new ArgumentException($"Invalid output node ID({outputPort.NodeId}) provided.");
+        if (!Nodes.TryGetValue(inputPort.NodeId, out INodeInstance? inputNode))
+            throw new ArgumentException($"Invalid input node ID({inputPort.NodeId}) provided.");
+        
+        if (!outputNode.Outputs.TryGetValue(outputPort.PortId, out PortReference? inputPortConnectedToOutput))
+            throw new ArgumentException($"Invalid output port name({outputPort.PortId}) provided.");
+        if (!inputNode.Inputs.TryGetValue(inputPort.PortId, out PortReference? outputPortConnectedToInput))
+            throw new ArgumentException($"Invalid input port name({inputPort.PortId}) provided.");
+        
+        if (inputPortConnectedToOutput is not null) RemoveConnectionByOutput(outputPort);
+        if (outputPortConnectedToInput is not null) RemoveConnectionByInput(inputPort);
+        
+        outputNode.Outputs[outputPort.PortId] = inputPort;
+        inputNode.Inputs[inputPort.PortId] = outputPort;
+        
+        InvalidateSurface();
+    }
+    
+    private void RemoveConnectionByOutput(PortReference outputPort)
+    {
+        if (!Nodes.TryGetValue(outputPort.NodeId, out INodeInstance? outputNode))
+            throw new ArgumentException($"Invalid output node ID({outputPort.NodeId}) provided.");
+        
+        if (!outputNode.Outputs.TryGetValue(outputPort.PortId, out PortReference? inputPortConnectedToOutput))
+            throw new ArgumentException($"Invalid output port name({outputPort.PortId}) provided.");
+        
+        if (inputPortConnectedToOutput is null)
+            throw new InvalidOperationException("Output port is not connected");
+        
+        INodeInstance inputNode = Nodes[inputPortConnectedToOutput.Value.NodeId];
+
+        outputNode.Outputs[outputPort.PortId] = null;
+        inputNode.Inputs[inputPortConnectedToOutput.Value.PortId] = null;
+
+        InvalidateSurface();
+    }
+    
+    private void RemoveConnectionByInput(PortReference inputPort)
+    {
+        if (!Nodes.TryGetValue(inputPort.NodeId, out INodeInstance? inputNode))
+            throw new ArgumentException($"Invalid input node ID({inputPort.NodeId}) provided.");
+        
+        if (!inputNode.Inputs.TryGetValue(inputPort.PortId, out PortReference? outputPortConnectedToInput))
+            throw new ArgumentException($"Invalid input port name({inputPort.PortId}) provided.");
+        
+        if (outputPortConnectedToInput is null)
+            throw new InvalidOperationException("Input port is not connected");
+        
+        INodeInstance outputNode = Nodes[outputPortConnectedToInput.Value.NodeId];
+
+        outputNode.Outputs[outputPortConnectedToInput.Value.PortId] = null;
+        inputNode.Inputs[inputPort.PortId] = null;
+
+        InvalidateSurface();
+    }
+
+    private bool TryRemoveConnection(PortReference outputPort, PortReference inputPort)
+    {
+        if (!Nodes.TryGetValue(outputPort.NodeId, out INodeInstance? outputNode))
+            throw new ArgumentException($"Invalid output node ID({outputPort.NodeId}) provided.");
+        if (!Nodes.TryGetValue(inputPort.NodeId, out INodeInstance? inputNode))
+            throw new ArgumentException($"Invalid input node ID({inputPort.NodeId}) provided.");
+        
+        if (!outputNode.Outputs.TryGetValue(outputPort.PortId, out PortReference? inputPortConnectedToOutput))
+            throw new ArgumentException($"Invalid output port name({outputPort.PortId}) provided.");
+        if (!inputNode.Inputs.TryGetValue(inputPort.PortId, out PortReference? outputPortConnectedToInput))
+            throw new ArgumentException($"Invalid input port name({inputPort.PortId}) provided.");
+        
+        if (inputPortConnectedToOutput != inputPort || outputPortConnectedToInput != outputPort)
         {
             return false;
         }
+        
+        outputNode.Outputs[outputPort.PortId] = null;
+        inputNode.Inputs[inputPort.PortId] = null;
 
-        bool exists = Connections.Any(connection =>
-            connection.FromNodeId == output.NodeId &&
-            connection.FromPort == output.PortName &&
-            connection.ToNodeId == input.NodeId &&
-            connection.ToPort == input.PortName);
-
-        if (exists)
-        {
-            return false;
-        }
-
-        Connections.Add(new NodeConnection(output.NodeId, output.PortName, input.NodeId, input.PortName));
         InvalidateSurface();
         return true;
     }
 
-    public bool RemoveConnection(NodePortReference output, NodePortReference input)
-    {
-        for (int i = Connections.Count - 1; i >= 0; i--)
-        {
-            NodeConnection connection = Connections[i];
-            if (connection.FromNodeId != output.NodeId ||
-                connection.FromPort != output.PortName ||
-                connection.ToNodeId != input.NodeId ||
-                connection.ToPort != input.PortName) continue;
-
-            Connections.RemoveAt(i);
-            InvalidateSurface();
-            return true;
-        }
-
-        return false;
-    }
-
-    private void SetSelectedNode(Guid? nodeId)
+    private void SetSelectedNode(int? nodeId)
     {
         if (SelectedNodeId == nodeId)
             return;
-
         SelectedNodeId = nodeId;
-        NodeInstance? selectedNode = nodeId.HasValue
-            ? Nodes.FirstOrDefault(n => n.Id == nodeId.Value)
-            : null;
+        
+        if (nodeId == null) return;
+
+        INodeInstance? selectedNode = Nodes.GetValueOrDefault(nodeId.Value);
         SelectionChanged?.Invoke(this, new NodeSelectionChangedEventArgs(selectedNode));
         InvalidateSurface();
     }
@@ -152,7 +214,7 @@ public sealed class NodesCanvasView : SKCanvasView
         }
 
         SKRect? bounds = null;
-        foreach (NodeInstance node in Nodes)
+        foreach (INodeInstance node in Nodes.Values)
         {
             SKRect nodeBounds = BuildLayout(node).Bounds;
             bounds = bounds.HasValue ? SKRect.Union(bounds.Value, nodeBounds) : nodeBounds;
@@ -190,7 +252,7 @@ public sealed class NodesCanvasView : SKCanvasView
 
         _layouts.Clear();
 
-        foreach (NodeInstance node in Nodes)
+        foreach (INodeInstance node in Nodes.Values)
         {
             NodeLayout layout = BuildLayout(node);
             _layouts[node.Id] = layout;
@@ -218,21 +280,26 @@ public sealed class NodesCanvasView : SKCanvasView
             }
         }
 
-        foreach (NodeConnection connection in Connections)
+        foreach ((int nodeId, INodeInstance node) in Nodes)
         {
-            if (!_layouts.TryGetValue(connection.FromNodeId, out NodeLayout? fromLayout) ||
-                !_layouts.TryGetValue(connection.ToNodeId, out NodeLayout? toLayout))
+            foreach ((string outputPortId, PortReference? connectedOutput) in node.Outputs)
             {
-                continue;
-            }
+                if (connectedOutput is null) continue;
+                
+                if (!_layouts.TryGetValue(nodeId, out NodeLayout? fromLayout) ||
+                    !_layouts.TryGetValue(connectedOutput.Value.NodeId, out NodeLayout? toLayout))
+                {
+                    continue;
+                }
 
-            if (!fromLayout.OutputPorts.TryGetValue(connection.FromPort, out SKPoint start) ||
-                !toLayout.InputPorts.TryGetValue(connection.ToPort, out SKPoint end))
-            {
-                continue;
-            }
+                if (!fromLayout.OutputPorts.TryGetValue(outputPortId, out SKPoint start) ||
+                    !toLayout.InputPorts.TryGetValue(connectedOutput.Value.PortId, out SKPoint end))
+                {
+                    continue;
+                }
 
-            DrawConnection(canvas, start, end);
+                DrawConnection(canvas, start, end);
+            }
         }
 
         if (_currentDragState is ConnectionDragState drag &&
@@ -242,12 +309,12 @@ public sealed class NodesCanvasView : SKCanvasView
         }
     }
 
-    private NodeLayout BuildLayout(NodeInstance node)
+    private NodeLayout BuildLayout(INodeInstance node)
     {
         float titleWidth = _titlePaint.MeasureText(node.Title);
-        float maxInputWidth = node.Inputs.Count == 0 ? 0f : node.Inputs.Max(input => _textPaint.MeasureText(input));
+        float maxInputWidth = node.Inputs.Count == 0 ? 0f : node.Inputs.Max(input => _textPaint.MeasureText(input.Key));
         float maxOutputWidth =
-            node.Outputs.Count == 0 ? 0f : node.Outputs.Max(output => _textPaint.MeasureText(output));
+            node.Outputs.Count == 0 ? 0f : node.Outputs.Max(output => _textPaint.MeasureText(output.Key));
 
         float leftColumnWidth = Math.Max(60f, maxInputWidth + 16f);
         float rightColumnWidth = Math.Max(60f, maxOutputWidth + 16f);
@@ -261,17 +328,18 @@ public sealed class NodesCanvasView : SKCanvasView
         Dictionary<string, SKPoint> inputPorts = new();
         Dictionary<string, SKPoint> outputPorts = new();
 
-        float rowStart = bounds.Top + NodePadding + HeaderHeight + LineHeight / 2f;
-        for (int i = 0; i < node.Inputs.Count; i++)
+        float y = bounds.Top + NodePadding + HeaderHeight + LineHeight / 2f;
+        foreach (string port in node.Inputs.Keys)
         {
-            float y = rowStart + i * LineHeight;
-            inputPorts[node.Inputs[i]] = new SKPoint(bounds.Left + NodePadding, y);
+            inputPorts[port] = new SKPoint(bounds.Left + NodePadding, y);
+            y += LineHeight;
         }
-
-        for (int i = 0; i < node.Outputs.Count; i++)
+        
+        y = bounds.Top + NodePadding + HeaderHeight + LineHeight / 2f;
+        foreach (string port in node.Outputs.Keys)
         {
-            float y = rowStart + i * LineHeight;
-            outputPorts[node.Outputs[i]] = new SKPoint(bounds.Right - NodePadding, y);
+            outputPorts[port] = new SKPoint(bounds.Right - NodePadding, y);
+            y += LineHeight;
         }
 
         return new NodeLayout(bounds, inputPorts, outputPorts);
@@ -312,12 +380,12 @@ public sealed class NodesCanvasView : SKCanvasView
             case SKTouchAction.Pressed:
                 {
                     SKPoint worldLocation = ScreenToWorld(e.Location);
-                    if (TryHitPort(worldLocation, out NodePortReference port))
+                    if (TryHitPort(worldLocation, out PortReference port))
                     {
                         SetSelectedNode(port.NodeId);
                         _currentDragState = new ConnectionDragState(port, worldLocation);
                     }
-                    else if (TryHitNode(worldLocation, out Guid nodeId, out SKPoint nodeOrigin))
+                    else if (TryHitNode(worldLocation, out int nodeId, out SKPoint nodeOrigin))
                     {
                         SetSelectedNode(nodeId);
                         _currentDragState = new NodeDragState(nodeId, worldLocation - nodeOrigin);
@@ -337,8 +405,8 @@ public sealed class NodesCanvasView : SKCanvasView
                 }
             case SKTouchAction.Moved when _currentDragState is NodeDragState nodeDrag:
                 {
-                    NodeInstance? node = Nodes.FirstOrDefault(n => n.Id == nodeDrag.NodeId);
-                    node?.Position = ScreenToWorld(e.Location) - nodeDrag.Offset;
+                    INodeInstance node = Nodes[nodeDrag.NodeId];
+                    node.Position = ScreenToWorld(e.Location) - nodeDrag.Offset;
 
                     break;
                 }
@@ -353,7 +421,7 @@ public sealed class NodesCanvasView : SKCanvasView
                 _currentDragState is ConnectionDragState releasedConnectionDrag:
                 {
                     SKPoint worldLocation = ScreenToWorld(e.Location);
-                    if (TryHitPort(worldLocation, out NodePortReference targetPort))
+                    if (TryHitPort(worldLocation, out PortReference targetPort))
                     {
                         ToggleConnection(releasedConnectionDrag.StartPort, targetPort);
                     }
@@ -379,9 +447,9 @@ public sealed class NodesCanvasView : SKCanvasView
         InvalidateSurface();
     }
 
-    private bool TryHitNode(SKPoint location, out Guid nodeId, out SKPoint nodeOrigin)
+    private bool TryHitNode(SKPoint location, out int nodeId, out SKPoint nodeOrigin)
     {
-        foreach ((Guid id, NodeLayout layout) in _layouts)
+        foreach ((int id, NodeLayout layout) in _layouts)
         {
             if (layout.Bounds.Contains(location))
             {
@@ -391,31 +459,29 @@ public sealed class NodesCanvasView : SKCanvasView
             }
         }
 
-        nodeId = Guid.Empty;
+        nodeId = -1;
         nodeOrigin = default;
         return false;
     }
 
-    private bool TryHitPort(SKPoint location, out NodePortReference port)
+    private bool TryHitPort(SKPoint location, out PortReference port)
     {
-        foreach ((Guid id, NodeLayout layout) in _layouts)
+        foreach ((int id, NodeLayout layout) in _layouts)
         {
             foreach ((string portName, SKPoint position) in layout.InputPorts)
             {
-                if (IsNear(location, position))
-                {
-                    port = new NodePortReference(id, portName, true);
-                    return true;
-                }
+                if (!IsNear(location, position)) continue;
+                
+                port = new PortReference(id, portName, PortType.Input);
+                return true;
             }
 
             foreach ((string portName, SKPoint position) in layout.OutputPorts)
             {
-                if (IsNear(location, position))
-                {
-                    port = new NodePortReference(id, portName, false);
-                    return true;
-                }
+                if (!IsNear(location, position)) continue;
+                
+                port = new PortReference(id, portName, PortType.Output);
+                return true;
             }
         }
 
@@ -423,24 +489,25 @@ public sealed class NodesCanvasView : SKCanvasView
         return false;
     }
 
-    private void ToggleConnection(NodePortReference a, NodePortReference b)
+    private void ToggleConnection(PortReference a, PortReference b)
     {
         if (a.NodeId == b.NodeId) return;
+        
+        if (a.Type == PortType.Input && b.Type == PortType.Input) return;
+        if (a.Type == PortType.Output && b.Type == PortType.Output) return;
 
-        NodePortReference output = a.IsInput ? b : a;
-        NodePortReference input = a.IsInput ? a : b;
+        PortReference output = a.Type == PortType.Output ? a : b;
+        PortReference input = a.Type == PortType.Input ? a : b;
 
-        if (output.IsInput || !input.IsInput) return;
-
-        if (!RemoveConnection(output, input)) TryAddConnection(output, input);
+        if (!TryRemoveConnection(output, input)) AddConnection(output, input);
     }
 
-    private bool TryGetPortPosition(NodePortReference port, out SKPoint position)
+    private bool TryGetPortPosition(PortReference port, out SKPoint position)
     {
         if (_layouts.TryGetValue(port.NodeId, out NodeLayout? layout))
         {
-            Dictionary<string, SKPoint> ports = port.IsInput ? layout.InputPorts : layout.OutputPorts;
-            if (ports.TryGetValue(port.PortName, out position))
+            Dictionary<string, SKPoint> ports = port.Type == PortType.Input ? layout.InputPorts : layout.OutputPorts;
+            if (ports.TryGetValue(port.PortId, out position))
             {
                 return true;
             }
@@ -478,56 +545,59 @@ public sealed class NodesCanvasView : SKCanvasView
 
     private interface IDragState;
 
-    private sealed record NodeDragState(Guid NodeId, SKPoint Offset) : IDragState;
+    private sealed record NodeDragState(int NodeId, SKPoint Offset) : IDragState;
 
     private sealed record PanDragState(SKPoint StartScreen, SKPoint StartOffset) : IDragState;
 
-    private sealed record ConnectionDragState(NodePortReference StartPort, SKPoint CurrentWorld) : IDragState;
+    private sealed record ConnectionDragState(PortReference StartPort, SKPoint CurrentWorld) : IDragState;
 }
 
-public sealed class NodeDefinition(
-    string typeId,
-    string name,
-    IReadOnlyList<string> inputs,
-    IReadOnlyList<string> outputs,
-    IReadOnlyList<EmbeddedInputInfo> embeddedInputs)
+public enum PortType
 {
-    public string TypeId { get; } = typeId;
-    public string Name { get; } = name;
-    public IReadOnlyList<string> Inputs { get; } = inputs;
-    public IReadOnlyList<string> Outputs { get; } = outputs;
-    public IReadOnlyList<EmbeddedInputInfo> EmbeddedInputs { get; } = embeddedInputs;
+    Input,
+    Output,
 }
 
-public sealed record EmbeddedInputInfo(string Name, Type ValueType);
+public readonly record struct PortReference(int NodeId, string PortId, PortType Type);
 
-public sealed class NodeInstance(NodeDefinition definition, SKPoint position)
+public interface INodeInstance
 {
-    public Guid Id { get; } = Guid.NewGuid();
-    public string TypeId { get; } = definition.TypeId;
-    public string Title { get; } = definition.Name;
-    public IReadOnlyList<string> Inputs { get; } = definition.Inputs;
-    public IReadOnlyList<string> Outputs { get; } = definition.Outputs;
-    public IReadOnlyList<EmbeddedInputInfo> EmbeddedInputs { get; } = definition.EmbeddedInputs;
+    int Id { get; }
+    SKPoint Position { get; set; }
+
+    string Title { get; }
+    List<string> EmbeddedInputs { get; }
+    Dictionary<string, PortReference?> Inputs { get; }
+    Dictionary<string, PortReference?> Outputs { get; }
+}
+
+public class NodeInstance<T>(
+    int id,
+    SKPoint position,
+    string title,
+    List<string> embeddedInputs,
+    Dictionary<string, PortReference?> inputs,
+    Dictionary<string, PortReference?> outputs,
+    T payload
+) : INodeInstance
+{
+    public int Id { get; } = id;
     public SKPoint Position { get; set; } = position;
-    public Dictionary<string, object?> EmbeddedInputValues { get; } = new();
+
+    public string Title { get; } = title;
+    public List<string> EmbeddedInputs { get; } = embeddedInputs;
+    public Dictionary<string, PortReference?> Inputs { get; } = inputs;
+    public Dictionary<string, PortReference?> Outputs { get; } = outputs;
+
+    public T Payload { get; set; } = payload;
 }
 
-public sealed class NodeConnection(Guid fromNodeId, string fromPort, Guid toNodeId, string toPort)
+public sealed class NodeSelectionChangedEventArgs(INodeInstance? selectedNode) : EventArgs
 {
-    public Guid FromNodeId { get; } = fromNodeId;
-    public string FromPort { get; } = fromPort;
-    public Guid ToNodeId { get; } = toNodeId;
-    public string ToPort { get; } = toPort;
+    public INodeInstance? SelectedNode { get; } = selectedNode;
 }
 
-public readonly record struct NodePortReference(Guid NodeId, string PortName, bool IsInput);
-
-public sealed class NodeSelectionChangedEventArgs(NodeInstance? selectedNode) : EventArgs
-{
-    public NodeInstance? SelectedNode { get; } = selectedNode;
-}
-
+// TODO move this to utils
 public static class Operators
 {
     extension(SKPoint)

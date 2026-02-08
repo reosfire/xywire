@@ -1,5 +1,6 @@
 ﻿namespace XywireHost.Core.core;
 
+// TODO rework color. maybe think about just vec4f with extensions. Anyway it's a good idea to add alpha channel here.
 public readonly struct Color
 {
     public readonly byte Red, Green, Blue;

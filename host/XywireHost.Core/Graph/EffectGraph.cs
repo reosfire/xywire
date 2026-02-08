@@ -4,13 +4,13 @@ using XywireHost.Core.core;
 namespace XywireHost.Core.Graph;
 
 public sealed record EffectGraphNode(
-    Guid Id,
+    int Id,
     string TypeId,
     float X,
     float Y,
     Dictionary<string, object?>? EmbeddedInputValues = null);
 
-public sealed record EffectGraphConnection(Guid FromNodeId, string FromPort, Guid ToNodeId, string ToPort);
+public sealed record EffectGraphConnection(int FromNodeId, string FromPort, int ToNodeId, string ToPort);
 
 public sealed class EffectGraphModel
 {
@@ -18,7 +18,7 @@ public sealed class EffectGraphModel
     public List<EffectGraphConnection> Connections { get; } = [];
 }
 
-public sealed class EffectNodeDescriptor(
+public sealed class ConcreteEffectDescriptor(
     string typeId,
     string displayName,
     IReadOnlyList<string> inputs,
@@ -45,7 +45,7 @@ public sealed class GenericEffectDescriptor(
     public Type GenericTypeDefinition { get; } = genericTypeDefinition;
     public int GenericParameterCount { get; } = genericParameterCount;
     
-    public EffectNodeDescriptor MakeConcreteDescriptor(params Type[] typeArguments)
+    public ConcreteEffectDescriptor MakeConcreteDescriptor(params Type[] typeArguments)
     {
         if (typeArguments.Length != GenericParameterCount)
             throw new ArgumentException($"Expected {GenericParameterCount} type arguments, got {typeArguments.Length}");
@@ -76,7 +76,7 @@ public static class EffectNodeCatalog
         new("LedLine", typeof(LedLine)),
     ];
 
-    private static readonly Dictionary<string, EffectNodeDescriptor> ConcreteDescriptors = new();
+    private static readonly Dictionary<string, ConcreteEffectDescriptor> ConcreteDescriptors = new();
     private static readonly List<GenericEffectDescriptor> GenericDescriptors = [];
 
     static EffectNodeCatalog()
@@ -84,13 +84,13 @@ public static class EffectNodeCatalog
         LoadFromAssembly(Assembly.GetExecutingAssembly());
     }
     
-    public static IReadOnlyList<EffectNodeDescriptor> All => ConcreteDescriptors.Values.ToList();
+    public static IReadOnlyList<ConcreteEffectDescriptor> All => ConcreteDescriptors.Values.ToList();
     public static IReadOnlyList<GenericEffectDescriptor> AllGeneric => GenericDescriptors;
 
-    public static EffectNodeDescriptor? TryGet(string typeId) =>
+    public static ConcreteEffectDescriptor? TryGet(string typeId) =>
         ConcreteDescriptors.GetValueOrDefault(typeId);
     
-    public static void RegisterConcreteDescriptor(EffectNodeDescriptor descriptor)
+    public static void RegisterConcreteDescriptor(ConcreteEffectDescriptor descriptor)
     {
         ConcreteDescriptors[descriptor.TypeId] = descriptor;
     }
@@ -115,18 +115,18 @@ public static class EffectNodeCatalog
             else
             {
                 // Concrete type - create descriptor and add to catalog
-                EffectNodeDescriptor descriptor = EffectTypeToDescriptor(type, type.Name, type.Name);
+                ConcreteEffectDescriptor descriptor = EffectTypeToDescriptor(type, type.Name, type.Name);
                 ConcreteDescriptors[descriptor.TypeId] = descriptor;
             }
         }
     }
 
-    internal static EffectNodeDescriptor EffectTypeToDescriptor(Type type, string typeId, string displayName)
+    internal static ConcreteEffectDescriptor EffectTypeToDescriptor(Type type, string typeId, string displayName)
     {
         object? createdInstance = Activator.CreateInstance(type);
         if (createdInstance is BaseEffect effectInstance)
         {
-            return new EffectNodeDescriptor(
+            return new ConcreteEffectDescriptor(
                 typeId,
                 displayName,
                 effectInstance.Inputs.Keys.ToList(),
@@ -145,14 +145,14 @@ public static class EffectNodeCatalog
 public sealed class EffectGraphCompilationResult
 {
     public EffectGraphCompilationResult(
-        IReadOnlyDictionary<Guid, IEffectNodeInstance> instances,
+        IReadOnlyDictionary<int, IEffectNodeInstance> instances,
         IReadOnlyList<string> errors)
     {
         Instances = instances;
         Errors = errors;
     }
 
-    public IReadOnlyDictionary<Guid, IEffectNodeInstance> Instances { get; }
+    public IReadOnlyDictionary<int, IEffectNodeInstance> Instances { get; }
     public IReadOnlyList<string> Errors { get; }
     public bool Success => Errors.Count == 0;
 }
@@ -162,12 +162,12 @@ public static class EffectGraphCompiler
     public static EffectGraphCompilationResult Compile(EffectGraphModel graph, IEffectContext context)
     {
         List<string> errors = [];
-        Dictionary<Guid, IEffectNodeInstance> instances = new();
-        Dictionary<Guid, EffectGraphNode> nodeDataMap = new();
+        Dictionary<int, IEffectNodeInstance> instances = new();
+        Dictionary<int, EffectGraphNode> nodeDataMap = new();
 
         foreach (EffectGraphNode node in graph.Nodes)
         {
-            EffectNodeDescriptor? descriptor = EffectNodeCatalog.TryGet(node.TypeId);
+            ConcreteEffectDescriptor? descriptor = EffectNodeCatalog.TryGet(node.TypeId);
             if (descriptor == null)
             {
                 errors.Add($"Unknown node type '{node.TypeId}' for node {node.Id}.");
@@ -240,7 +240,7 @@ public static class EffectGraphCompiler
         }
 
         // Invoke embedded inputs with provided values
-        foreach ((Guid nodeId, IEffectNodeInstance instance) in instances)
+        foreach ((int nodeId, IEffectNodeInstance instance) in instances)
         {
             if (!nodeDataMap.TryGetValue(nodeId, out EffectGraphNode? node))
                 continue;
