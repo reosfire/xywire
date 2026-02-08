@@ -51,7 +51,7 @@ public abstract class BaseEffect : IDataSink, IDataSource, IEffectNodeInstance
 
     public void BindOutputs(string outputSlotName, string inputHandleName, BaseEffect targetEffect)
     {
-        IUntypedOutputSlot outputSlot = _outputs._container[outputSlotName];
+        IUntypedOutputSlot outputSlot = _outputs.Container[outputSlotName];
         IUntypedInputHandle inputHandle = targetEffect._inputs._container[inputHandleName];
         BindOutputs(outputSlot, inputHandle);
     }
@@ -78,6 +78,8 @@ public interface IUntypedOutputSlot
     Type ValueType { get; }
 
     void SetSetValue(Delegate setValue);
+    
+    void Invoke(object? value);
 }
 
 public interface IUntypedInputHandle
@@ -110,6 +112,19 @@ public class OutputSlot<T>(string id) : IUntypedOutputSlot
     }
 
     public void Invoke(T value) => _setValueDelegate?.Invoke(value);
+
+    public void Invoke(object? value)
+    {
+        if (value is T typedValue)
+        {
+            Invoke(typedValue);
+        }
+        else
+        {
+            throw new InvalidOperationException(
+                $"Invalid value type for output slot {Id}. Expected {typeof(T).Name}.");
+        }
+    }
 }
 
 internal class InputHandle<T>(string id, Action<T> valueChangeHandler) : IUntypedInputHandle
@@ -144,16 +159,24 @@ internal class EffectInputsCollection : IEffectInputsCollection
         _container[name] = new InputHandle<T>(name, callback);
 }
 
-internal class EffectOutputsCollection : IEffectOutputsCollection
+public class EffectOutputsCollection : IEffectOutputsCollection
 {
-    internal Dictionary<string, IUntypedOutputSlot> _container = new();
+    public readonly Dictionary<string, IUntypedOutputSlot> Container = new();
 
-    public IReadOnlyDictionary<string, IUntypedOutputSlot> Entries => _container;
+    public IReadOnlyDictionary<string, IUntypedOutputSlot> Entries => Container;
 
     public OutputSlot<T> RegisterOutput<T>(string name)
     {
         OutputSlot<T> outputSlot = new(name);
-        _container[name] = outputSlot;
+        Container[name] = outputSlot;
+        return outputSlot;
+    }
+    
+    public IUntypedOutputSlot RegisterOutput(string name, Type valueType)
+    {
+        Type outputSlotType = typeof(OutputSlot<>).MakeGenericType(valueType);
+        IUntypedOutputSlot outputSlot = (IUntypedOutputSlot)Activator.CreateInstance(outputSlotType, name)!;
+        Container[name] = outputSlot;
         return outputSlot;
     }
 }

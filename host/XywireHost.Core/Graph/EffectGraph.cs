@@ -8,7 +8,7 @@ public sealed record EffectGraphNode(
     string TypeId,
     float X,
     float Y,
-    Dictionary<string, object?>? EmbeddedInputValues = null);
+    Dictionary<string, IUntypedOutputSlot> OutputsForEmbeddedInputs);
 
 public sealed record EffectGraphConnection(int FromNodeId, string FromPort, int ToNodeId, string ToPort);
 
@@ -44,7 +44,7 @@ public sealed class GenericEffectDescriptor(
     public string DisplayName { get; } = displayName;
     public Type GenericTypeDefinition { get; } = genericTypeDefinition;
     public int GenericParameterCount { get; } = genericParameterCount;
-    
+
     public ConcreteEffectDescriptor MakeConcreteDescriptor(params Type[] typeArguments)
     {
         if (typeArguments.Length != GenericParameterCount)
@@ -83,13 +83,13 @@ public static class EffectNodeCatalog
     {
         LoadFromAssembly(Assembly.GetExecutingAssembly());
     }
-    
+
     public static IReadOnlyList<ConcreteEffectDescriptor> All => ConcreteDescriptors.Values.ToList();
     public static IReadOnlyList<GenericEffectDescriptor> AllGeneric => GenericDescriptors;
 
     public static ConcreteEffectDescriptor? TryGet(string typeId) =>
         ConcreteDescriptors.GetValueOrDefault(typeId);
-    
+
     public static void RegisterConcreteDescriptor(ConcreteEffectDescriptor descriptor)
     {
         ConcreteDescriptors[descriptor.TypeId] = descriptor;
@@ -103,7 +103,6 @@ public static class EffectNodeCatalog
 
             if (type.IsGenericTypeDefinition)
             {
-                // Generic type - add to generic descriptors
                 GenericEffectDescriptor genericDescriptor = new(
                     type.Name.Split('`')[0], // Remove `1, `2 etc. suffix
                     type.Name.Split('`')[0],
@@ -114,7 +113,6 @@ public static class EffectNodeCatalog
             }
             else
             {
-                // Concrete type - create descriptor and add to catalog
                 ConcreteEffectDescriptor descriptor = EffectTypeToDescriptor(type, type.Name, type.Name);
                 ConcreteDescriptors[descriptor.TypeId] = descriptor;
             }
@@ -142,18 +140,11 @@ public static class EffectNodeCatalog
     }
 }
 
-public sealed class EffectGraphCompilationResult
+public sealed record EffectGraphCompilationResult(
+    IReadOnlyDictionary<int, IEffectNodeInstance> Instances,
+    IReadOnlyList<string> Errors
+)
 {
-    public EffectGraphCompilationResult(
-        IReadOnlyDictionary<int, IEffectNodeInstance> instances,
-        IReadOnlyList<string> errors)
-    {
-        Instances = instances;
-        Errors = errors;
-    }
-
-    public IReadOnlyDictionary<int, IEffectNodeInstance> Instances { get; }
-    public IReadOnlyList<string> Errors { get; }
     public bool Success => Errors.Count == 0;
 }
 
@@ -175,24 +166,21 @@ public static class EffectGraphCompiler
             }
 
             // Validate embedded input values types
-            if (node.EmbeddedInputValues != null)
+            foreach ((string inputName, IUntypedOutputSlot outputSlot) in node.OutputsForEmbeddedInputs)
             {
-                foreach ((string inputName, object? value) in node.EmbeddedInputValues)
+                EmbeddedInputDescriptor? embeddedInput = descriptor.EmbeddedInputs
+                    .FirstOrDefault(e => e.Name == inputName);
+
+                if (embeddedInput == null)
                 {
-                    EmbeddedInputDescriptor? embeddedInput = descriptor.EmbeddedInputs
-                        .FirstOrDefault(e => e.Name == inputName);
+                    errors.Add($"Unknown embedded input '{inputName}' for node {node.Id}.");
+                    continue;
+                }
 
-                    if (embeddedInput == null)
-                    {
-                        errors.Add($"Unknown embedded input '{inputName}' for node {node.Id}.");
-                        continue;
-                    }
-
-                    if (value != null && !embeddedInput.ValueType.IsInstanceOfType(value))
-                    {
-                        errors.Add(
-                            $"Embedded input '{inputName}' on node {node.Id} expects type {embeddedInput.ValueType.Name} but got {value.GetType().Name}.");
-                    }
+                if (!embeddedInput.ValueType.IsAssignableFrom(outputSlot.ValueType))
+                {
+                    errors.Add(
+                        $"Embedded input '{inputName}' on node {node.Id} expects type {embeddedInput.ValueType.Name} but got {outputSlot.GetType().Name}.");
                 }
             }
 
@@ -245,20 +233,12 @@ public static class EffectGraphCompiler
             if (!nodeDataMap.TryGetValue(nodeId, out EffectGraphNode? node))
                 continue;
 
-            if (node.EmbeddedInputValues == null)
-                continue;
-
-            foreach ((string inputName, object? value) in node.EmbeddedInputValues)
+            foreach ((string inputName, IUntypedOutputSlot outputSlot) in node.OutputsForEmbeddedInputs)
             {
-                if (value == null)
-                    continue;
-
                 if (!instance.EmbeddedInputs.TryGetValue(inputName, out IUntypedInputHandle? inputHandle))
                     continue;
 
-                // Get the SetValue delegate and invoke it with the value
-                Delegate setValue = inputHandle.GetSetValue();
-                setValue.DynamicInvoke(value);
+                BaseEffect.BindOutputs(outputSlot, inputHandle);
             }
         }
 
