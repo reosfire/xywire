@@ -46,7 +46,10 @@ public partial class NodeEditorPage : ContentPage
     private void SeedSampleGraph()
     {
         if (!TryGetDefinition("ConstantInt", out NodeDefinition? constantInt) ||
-            !TryGetDefinition("Rainbow", out NodeDefinition? rainbow))
+            !TryGetDefinition("Rainbow", out NodeDefinition? rainbow) ||
+            !TryGetDefinition("WhiteCircle", out NodeDefinition? whiteCircle) ||
+            !TryGetDefinition("Overlay", out NodeDefinition? overlay) ||
+            !TryGetDefinition("LedLine", out NodeDefinition? ledLine))
         {
             return;
         }

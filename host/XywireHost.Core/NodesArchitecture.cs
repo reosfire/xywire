@@ -378,16 +378,6 @@ internal class RainbowEffect : BaseEffect
     }
 }
 
-internal class CubeEffect : BaseEffect
-{
-    private readonly OutputSlot<IReadOnlyBuffer2D<Color>> _colorsOutput;
-
-    public CubeEffect()
-    {
-        _colorsOutput = OutputSlots.RegisterOutput<IReadOnlyBuffer2D<Color>>("colorBuffer");
-    }
-}
-
 internal class OverlayEffect : BaseEffect
 {
     private readonly OutputSlot<IReadOnlyBuffer2D<Color>> _colorsOutput;
@@ -453,26 +443,27 @@ internal class OverlayEffect : BaseEffect
     }
 }
 
-internal class MulticastEffect : BaseEffect
+internal class MulticastEffect<T> : BaseEffect
 {
-    private readonly OutputSlot<IReadOnlyBuffer2D<Color>> _colorsOutput0;
-    private readonly OutputSlot<IReadOnlyBuffer2D<Color>> _colorsOutput1;
+    private readonly OutputSlot<T> _colorsOutput0;
+    private readonly OutputSlot<T> _colorsOutput1;
 
     public MulticastEffect()
     {
-        _colorsOutput0 = OutputSlots.RegisterOutput<IReadOnlyBuffer2D<Color>>("colorBuffer0");
-        _colorsOutput1 = OutputSlots.RegisterOutput<IReadOnlyBuffer2D<Color>>("colorBuffer1");
+        _colorsOutput0 = OutputSlots.RegisterOutput<T>("output0");
+        _colorsOutput1 = OutputSlots.RegisterOutput<T>("output1");
 
-        InputHandles.RegisterInput<IReadOnlyBuffer2D<Color>>("colorBuffer", SetColorBuffer);
+        InputHandles.RegisterInput<T>("colorBuffer", SetColorBuffer);
     }
 
-    private void SetColorBuffer(IReadOnlyBuffer2D<Color> buffer)
+    private void SetColorBuffer(T buffer)
     {
         _colorsOutput0.Invoke(buffer);
         _colorsOutput1.Invoke(buffer);
     }
 }
 
+// TODO make it with antialiased raytracing
 internal class WhiteCircleEffect : BaseEffect
 {
     private readonly OutputSlot<IReadOnlyBuffer2D<Color>> _colorsOutput;
@@ -484,6 +475,7 @@ internal class WhiteCircleEffect : BaseEffect
     private int _width;
     private int _height;
     private int _fps;
+    // TODO make it double
     private int _radius;
 
     public WhiteCircleEffect()
@@ -504,7 +496,6 @@ internal class WhiteCircleEffect : BaseEffect
 
     private void Render()
     {
-        // Clear buffer to black
         for (int row = 0; row < _height; row++)
         {
             for (int col = 0; col < _width; col++)
@@ -512,12 +503,10 @@ internal class WhiteCircleEffect : BaseEffect
                 _colorBuffer[new Index2D(row, col)] = Color.RGB(0, 0, 0);
             }
         }
-
-        // Calculate center of the buffer
+        
         double centerRow = _height / 2.0;
         double centerCol = _width / 2.0;
-
-        // Draw white circle
+        
         for (int row = 0; row < _height; row++)
         {
             for (int col = 0; col < _width; col++)
@@ -525,10 +514,16 @@ internal class WhiteCircleEffect : BaseEffect
                 double dx = col - centerCol;
                 double dy = row - centerRow;
                 double distance = Math.Sqrt(dx * dx + dy * dy);
+                
+                double sdfValue = distance - _radius;
 
-                if (distance <= _radius)
+                if (sdfValue < 0)
                 {
                     _colorBuffer[new Index2D(row, col)] = Color.RGB(255, 255, 255);
+                }
+                else
+                {
+                    _colorBuffer[new Index2D(row, col)] = Color.RGB(255, 255, 255) * sdfValue;
                 }
             }
         }
@@ -568,7 +563,6 @@ internal class WhiteCircleEffect : BaseEffect
     private void SetRadius(int radius)
     {
         _radius = radius;
-        // No need to restart, just update the radius - next frame will use it
     }
 }
 
@@ -643,7 +637,8 @@ internal class User
         LedLineEffect ledline1 = new();
         LedLineEffect ledline2 = new();
 
-        MulticastEffect multicastEffect = CreateEffect(() => new MulticastEffect());
+        MulticastEffect<IReadOnlyBuffer2D<Color>> multicastEffect = 
+            CreateEffect(() => new MulticastEffect<IReadOnlyBuffer2D<Color>>());
         // TODO recursive output collections or at least arrays
         multicastEffect.BindOutputs("colorBuffer0", "colorBuffer", ledline1);
         multicastEffect.BindOutputs("colorBuffer1", "colorBuffer", ledline2);
@@ -651,8 +646,8 @@ internal class User
         OverlayEffect overlayEffect = CreateEffect(() => new OverlayEffect());
         overlayEffect.BindOutputs("colorBuffer", "colorBuffer", multicastEffect);
 
-        CubeEffect cubeEffect = CreateEffect(() => new CubeEffect());
-        cubeEffect.BindOutputs("colorBuffer", "colorBuffer0", overlayEffect);
+        WhiteCircleEffect circleEffect = CreateEffect(() => new WhiteCircleEffect());
+        circleEffect.BindOutputs("colorBuffer", "colorBuffer0", overlayEffect);
 
         RainbowEffect rainbowEffect = CreateEffect(() => new RainbowEffect());
         rainbowEffect.BindOutputs("colorBuffer", "colorBuffer1", overlayEffect);

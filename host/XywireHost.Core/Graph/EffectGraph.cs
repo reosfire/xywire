@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Reflection;
 using XywireHost.Core.core;
 
 namespace XywireHost.Core.Graph;
@@ -38,64 +39,47 @@ public sealed record EmbeddedInputDescriptor(string Name, Type ValueType);
 
 public static class EffectNodeCatalog
 {
+    public static IReadOnlyList<EffectNodeDescriptor> All { get; } = 
+        GetDescriptorsFromAssembly(Assembly.GetExecutingAssembly());
+    
     private static readonly IReadOnlyDictionary<string, EffectNodeDescriptor> CatalogLookup =
         new ReadOnlyDictionary<string, EffectNodeDescriptor>(All.ToDictionary(node => node.TypeId));
 
-    public static IReadOnlyList<EffectNodeDescriptor> All { get; } = new List<EffectNodeDescriptor>
-    {
-        new(
-            "Rainbow",
-            "Rainbow",
-            ["width", "height", "fps"],
-            ["colorBuffer"],
-            [],
-            () => new RainbowEffect()),
-        new(
-            "Cube",
-            "Cube",
-            [],
-            ["colorBuffer"],
-            [],
-            () => new CubeEffect()),
-        new(
-            "Overlay",
-            "Overlay",
-            ["colorBuffer0", "colorBuffer1"],
-            ["colorBuffer"],
-            [],
-            () => new OverlayEffect()),
-        new(
-            "Multicast",
-            "Multicast",
-            ["colorBuffer"],
-            ["colorBuffer0", "colorBuffer1"],
-            [],
-            () => new MulticastEffect()),
-        new(
-            "ConstantInt",
-            "Constant (int)",
-            [],
-            ["value"],
-            [new EmbeddedInputDescriptor("value", typeof(int))],
-            () => new ConstantEffect<int>()),
-        new(
-            "WhiteCircle",
-            "White Circle",
-            ["width", "height", "fps", "radius"],
-            ["colorBuffer"],
-            [],
-            () => new WhiteCircleEffect()),
-        new(
-            "LedLine",
-            "Led Line",
-            ["colorBuffer"],
-            [],
-            [new EmbeddedInputDescriptor("ledLine", typeof(LedLine))],
-            () => new LedLineEffect()),
-    };
-
     public static EffectNodeDescriptor? TryGet(string typeId) =>
         CatalogLookup.GetValueOrDefault(typeId);
+
+    private static List<EffectNodeDescriptor> GetDescriptorsFromAssembly(Assembly assembly)
+    {
+        List<EffectNodeDescriptor> descriptors = [];
+
+        foreach (Type type in assembly.GetTypes())
+        {
+            if (!typeof(BaseEffect).IsAssignableFrom(type) || type.IsAbstract) continue;
+            
+            EffectNodeDescriptor descriptor = EffectTypeToDescriptor(type);
+            descriptors.Add(descriptor);
+        }
+
+        return descriptors;
+    }
+    
+    private static EffectNodeDescriptor EffectTypeToDescriptor(Type type)
+    {
+        object? createdInstance = Activator.CreateInstance(type, [type]);
+        if (createdInstance is BaseEffect effectInstance)
+        {
+            return new EffectNodeDescriptor(
+                type.Name,
+                type.Name,
+                effectInstance.Inputs.Keys.ToList(),
+                effectInstance.Outputs.Keys.ToList(),
+                effectInstance.EmbeddedInputs.Select(ei => new EmbeddedInputDescriptor(ei.Key, ei.Value.ValueType)).ToList(),
+                () => (IEffectNodeInstance)Activator.CreateInstance(type)!
+            );
+        }
+        
+        throw new InvalidOperationException($"Type {type.Name} is not a valid effect type.");
+    }
 }
 
 public sealed class EffectGraphCompilationResult
