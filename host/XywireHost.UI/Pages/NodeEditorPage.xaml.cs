@@ -8,25 +8,42 @@ using XywireHost.UI.Controls;
 namespace XywireHost.UI.Pages;
 
 public abstract record NodePickerItem(string DisplayName);
+
 public sealed record ConcreteNodePickerItem(string DisplayName, ConcreteEffectDescriptor ConcreteDescriptor)
     : NodePickerItem(DisplayName);
+
 public sealed record GenericNodePickerItem(string DisplayName, GenericEffectDescriptor GenericDescriptor)
     : NodePickerItem(DisplayName);
 
 public record Payload(
-    Dictionary<string, IUntypedOutputSlot> EmbeddedInputValues,
-    Dictionary<string, EmbeddedInputInfo> EmbeddedInputs,
-    string TypeId
+    string TypeId,
+    Dictionary<string, EmbeddedInputInfo> EmbeddedInputs
 );
 
-public readonly record struct EmbeddedInputInfo(string Name, Type ValueType);
+public class EmbeddedInputInfo(
+    string name,
+    Type valueType,
+    IUntypedOutputSlot outputSlot,
+    object? currentValue
+) {
+    public string Name { get; } = name;
+    public Type ValueType { get; } = valueType;
+    public IUntypedOutputSlot OutputSlot { get; } = outputSlot;
+    public object? CurrentValue { get; private set; } = currentValue;
+
+    public void InvokeAndSetCurrentValue(object value)
+    {
+        OutputSlot.Invoke(value);
+        CurrentValue = value;
+    }
+}
 
 public partial class NodeEditorPage : ContentPage
 {
     private readonly EffectService _effectService;
 
     private readonly List<NodePickerItem> _pickerItems = [];
-    
+
     private readonly EffectOutputsCollection _systemOutputs = new();
 
     public NodeEditorPage(EffectService effectService)
@@ -76,39 +93,37 @@ public partial class NodeEditorPage : ContentPage
     }
 
     private int _outputId = 0;
-    
-    private readonly Dictionary<(int NodeId, string InputName), int> _nodeIdToOutputId = new();
 
     private NodeInstance<Payload> CreateNodeFromDescriptor(ConcreteEffectDescriptor prototype, SKPoint position)
     {
+        Dictionary<string, EmbeddedInputInfo> embeddedInputs = prototype.EmbeddedInputs.ToDictionary(
+            descriptor => descriptor.Name,
+            descriptor => new EmbeddedInputInfo(
+                descriptor.Name,
+                descriptor.ValueType,
+                _systemOutputs.RegisterOutput((_outputId++).ToString(), descriptor.ValueType),
+                null
+            )
+        );
+
         NodeInstance<Payload> result = NodesView.AddNode(
             position: position,
             prototype.DisplayName,
             prototype.Inputs.ToList(),
             prototype.Outputs.ToList(),
             new Payload(
-                prototype.EmbeddedInputs.ToDictionary(e => e.Name, e => _systemOutputs.RegisterOutput((_outputId++).ToString(), e.ValueType)),
-                prototype.EmbeddedInputs.ToDictionary(e => e.Name, e => new EmbeddedInputInfo(e.Name, e.ValueType)),
-                prototype.TypeId
+                prototype.TypeId,
+                embeddedInputs
             )
         );
-
-        int i = 0;
-        foreach ((string name, Type type) in prototype.EmbeddedInputs)
-        {
-            _nodeIdToOutputId[(result.Id, name)] = _outputId - prototype.EmbeddedInputs.Count + i;
-            i++;
-        }
 
         return result;
     }
 
     private void SeedSampleGraph()
     {
-        // First, ensure we have a ConstantEffect<Int32> in the catalog
         EnsureGenericEffectRegistered("ConstantEffect", typeof(int));
-
-        // Use Type.Name for lookup (Int32, not int)
+        
         string intTypeName = typeof(int).Name; // "Int32"
         if (!TryGetDescriptor($"ConstantEffect<{intTypeName}>", out ConcreteEffectDescriptor? constantInt) ||
             !TryGetDescriptor("RainbowEffect", out ConcreteEffectDescriptor? rainbow) ||
@@ -152,7 +167,7 @@ public partial class NodeEditorPage : ContentPage
         NodePickerItem? selectedItem = GetSelectedNodePickerItem();
         if (selectedItem == null)
         {
-            await DisplayAlert("Add Node", "Select a node type first.", "OK");
+            await DisplayAlertAsync("Add Node", "Select a node type first.", "OK");
             return;
         }
 
@@ -168,7 +183,7 @@ public partial class NodeEditorPage : ContentPage
                 // Get selected type argument
                 if (GenericTypePicker.SelectedIndex < 0)
                 {
-                    await DisplayAlert("Add Node", "Select a type parameter first.", "OK");
+                    await DisplayAlertAsync("Add Node", "Select a type parameter first.", "OK");
                     return;
                 }
 
@@ -179,17 +194,17 @@ public partial class NodeEditorPage : ContentPage
                 EnsureGenericEffectRegistered(genericItem.GenericDescriptor.BaseTypeId, selectedType.Type);
 
                 string typeId = $"{genericItem.GenericDescriptor.BaseTypeId}<{selectedType.Type.Name}>";
-                
+
                 if (!TryGetDescriptor(typeId, out descriptor))
                 {
-                    await DisplayAlert("Add Node", "Failed to create generic effect.", "OK");
+                    await DisplayAlertAsync("Add Node", "Failed to create generic effect.", "OK");
                     return;
                 }
 
                 break;
 
             default:
-                await DisplayAlert("Add Node", "Unknown node type.", "OK");
+                await DisplayAlertAsync("Add Node", "Unknown node type.", "OK");
                 return;
         }
 
@@ -202,7 +217,7 @@ public partial class NodeEditorPage : ContentPage
     {
         if (NodesView.SelectedNodeId is not { } nodeId)
         {
-            await DisplayAlert("Remove Node", "Select a node to remove.", "OK");
+            await DisplayAlertAsync("Remove Node", "Select a node to remove.", "OK");
             return;
         }
 
@@ -218,42 +233,57 @@ public partial class NodeEditorPage : ContentPage
 
         if (result.Success)
         {
-            foreach (((int nodeId, string inputName), object? value) in _systemOutputsCurrentValues)
+            foreach (EffectGraphNode effectGraphNode in model.Nodes)
             {
-                _systemOutputs.Container[_nodeIdToOutputId[(nodeId, inputName)].ToString()].Invoke(value);
-            }
-
-            foreach (((int nodeId, string inputName), int outputId) in _nodeIdToOutputId)
-            {
-                if (inputName == "ledLine")
+                foreach ((string inputId, IUntypedOutputSlot outputSlot) in effectGraphNode.OutputsForEmbeddedInputs)
                 {
-                    _systemOutputs.Container[outputId.ToString()].Invoke(_effectService.ConnectedLedLine);
+                    // TODO: do something with this sh
+                    if (inputId == "ledLine")
+                    {
+                        outputSlot.Invoke(_effectService.ConnectedLedLine);
+                        continue;
+                    }
+                    
+                    if (effectGraphNode.EmbeddedInputValues.TryGetValue(inputId, out object? value))
+                    {
+                        outputSlot.Invoke(value);
+                    }
                 }
             }
-            
-            await DisplayAlert("Compile Graph", "Graph compiled successfully.", "OK");
+
+            await DisplayAlertAsync("Compile Graph", "Graph compiled successfully.", "OK");
             return;
         }
 
         string errors = string.Join(Environment.NewLine, result.Errors);
-        await DisplayAlert("Compile Graph", errors, "OK");
+        await DisplayAlertAsync("Compile Graph", errors, "OK");
     }
 
     private EffectGraphModel BuildGraphModel()
     {
         EffectGraphModel model = new();
 
-        foreach (NodeInstance<Payload> node in NodesView.Nodes.Values)
+        foreach (INodeInstance nodeInstance in NodesView.Nodes.Values)
         {
-            Dictionary<string, IUntypedOutputSlot> embeddedValues = new(node.Payload.EmbeddedInputValues);
+            if (nodeInstance is not NodeInstance<Payload> node) continue;
+            
+            Dictionary<string, IUntypedOutputSlot> outputsForEmbeddedInputs = node.Payload.EmbeddedInputs.ToDictionary(
+                kvp => kvp.Key,
+                kvp => kvp.Value.OutputSlot
+            );
+            
+            Dictionary<string, object?> currentValuesForEmbeddedInputs = node.Payload.EmbeddedInputs.ToDictionary(
+                kvp => kvp.Key,
+                kvp => kvp.Value.CurrentValue
+            );
 
             model.Nodes.Add(
                 new EffectGraphNode(
                     node.Id,
                     node.Payload.TypeId,
-                    node.Position.X,
-                    node.Position.Y,
-                    embeddedValues)
+                    outputsForEmbeddedInputs,
+                    currentValuesForEmbeddedInputs
+                )
             );
         }
 
@@ -262,7 +292,7 @@ public partial class NodeEditorPage : ContentPage
             foreach ((string fromPort, PortReference? toPort) in fromNode.Outputs)
             {
                 if (toPort is null) continue;
-                
+
                 model.Connections.Add(
                     new EffectGraphConnection(
                         fromNodeId,
@@ -294,7 +324,7 @@ public partial class NodeEditorPage : ContentPage
             EmbeddedInputsPanel.IsVisible = false;
             return;
         }
-        
+
         SelectedNodeLabel.Text = node.Title;
 
         if (node.Payload.EmbeddedInputs.Count == 0)
@@ -305,34 +335,25 @@ public partial class NodeEditorPage : ContentPage
 
         foreach (EmbeddedInputInfo embeddedInput in node.Payload.EmbeddedInputs.Values)
         {
-            View editor = CreateEditorForType(node, embeddedInput.ValueType, embeddedInput.Name);
-            
+            View editor = CreateEditorForInput(embeddedInput);
+
             VerticalStackLayout inputLayout = new() { Spacing = 4 };
-            inputLayout.Children.Add(new Label
-            {
-                Text = embeddedInput.Name, FontSize = 12, TextColor = Colors.Gray,
-            });
+            inputLayout.Children.Add(new Label { Text = embeddedInput.Name, FontSize = 12, TextColor = Colors.Gray, });
             inputLayout.Children.Add(editor);
             EmbeddedInputsContainer.Children.Add(inputLayout);
         }
 
         EmbeddedInputsPanel.IsVisible = EmbeddedInputsContainer.Children.Count > 0;
     }
-    
-    private Dictionary<(int NodeId, string InputName), object?> _systemOutputsCurrentValues = new();
 
-    private View CreateEditorForType(NodeInstance<Payload> node, Type valueType, string inputName)
+    private View CreateEditorForInput(EmbeddedInputInfo inputInfo)
     {
-        // Get current value
-        _systemOutputsCurrentValues.TryGetValue((node.Id, inputName), out object? currentValue);
-        node.Payload.EmbeddedInputValues.TryGetValue(inputName, out IUntypedOutputSlot? currentSlot);
-
-        if (valueType == typeof(int))
+        if (inputInfo.ValueType == typeof(int))
         {
             Entry entry = new()
             {
                 Keyboard = Keyboard.Numeric,
-                Text = currentValue?.ToString() ?? "0",
+                Text = inputInfo.CurrentValue?.ToString() ?? "0",
                 Placeholder = "Enter integer value",
             };
 
@@ -340,27 +361,24 @@ public partial class NodeEditorPage : ContentPage
             {
                 if (int.TryParse(args.NewTextValue, out int intValue))
                 {
-                    currentSlot.Invoke(intValue);
-                    _systemOutputsCurrentValues[(node.Id, inputName)] = intValue;
+                    inputInfo.InvokeAndSetCurrentValue(intValue);
                 }
             };
-
-            // Initialize with default value if not set
-            if (currentValue == null && int.TryParse(entry.Text, out int defaultValue))
+            
+            if (inputInfo.CurrentValue == null && int.TryParse(entry.Text, out int defaultValue))
             {
-                currentSlot.Invoke(defaultValue);
-                _systemOutputsCurrentValues[(node.Id, inputName)] = defaultValue;
+                inputInfo.InvokeAndSetCurrentValue(defaultValue);
             }
 
             return entry;
         }
 
-        if (valueType == typeof(float))
+        if (inputInfo.ValueType == typeof(float))
         {
             Entry entry = new()
             {
                 Keyboard = Keyboard.Numeric,
-                Text = currentValue?.ToString() ?? "0",
+                Text = inputInfo.CurrentValue?.ToString() ?? "0",
                 Placeholder = "Enter float value",
             };
 
@@ -368,20 +386,19 @@ public partial class NodeEditorPage : ContentPage
             {
                 if (float.TryParse(args.NewTextValue, out float floatValue))
                 {
-                    currentSlot.Invoke(floatValue);
-                    _systemOutputsCurrentValues[(node.Id, inputName)] = floatValue;
+                    inputInfo.InvokeAndSetCurrentValue(floatValue);
                 }
             };
 
             return entry;
         }
 
-        if (valueType == typeof(double))
+        if (inputInfo.ValueType == typeof(double))
         {
             Entry entry = new()
             {
                 Keyboard = Keyboard.Numeric,
-                Text = currentValue?.ToString() ?? "0",
+                Text = inputInfo.CurrentValue?.ToString() ?? "0",
                 Placeholder = "Enter double value",
             };
 
@@ -389,40 +406,37 @@ public partial class NodeEditorPage : ContentPage
             {
                 if (double.TryParse(args.NewTextValue, out double doubleValue))
                 {
-                    currentSlot.Invoke(doubleValue);
-                    _systemOutputsCurrentValues[(node.Id, inputName)] = doubleValue;
+                    inputInfo.InvokeAndSetCurrentValue(doubleValue);
                 }
             };
 
             return entry;
         }
 
-        if (valueType == typeof(string))
+        if (inputInfo.ValueType == typeof(string))
         {
-            Entry entry = new() { Text = currentValue?.ToString() ?? "", Placeholder = "Enter text value" };
+            Entry entry = new() { Text = inputInfo.CurrentValue?.ToString() ?? "", Placeholder = "Enter text value" };
 
             entry.TextChanged += (_, args) =>
             {
-                currentSlot.Invoke(args.NewTextValue);
-                _systemOutputsCurrentValues[(node.Id, inputName)] = args.NewTextValue;
+                inputInfo.InvokeAndSetCurrentValue(args.NewTextValue);
             };
 
             return entry;
         }
 
-        if (valueType == typeof(bool))
+        if (inputInfo.ValueType == typeof(bool))
         {
-            Switch toggle = new() { IsToggled = currentValue is true };
+            Switch toggle = new() { IsToggled = inputInfo.CurrentValue is true };
 
             toggle.Toggled += (_, args) =>
             {
-                currentSlot.Invoke(args.Value);
-                _systemOutputsCurrentValues[(node.Id, inputName)] = args.Value;
+                inputInfo.InvokeAndSetCurrentValue(args.Value);
             };
 
             return toggle;
         }
-        
+
         return new Label
         {
             Text = "(System provided)",

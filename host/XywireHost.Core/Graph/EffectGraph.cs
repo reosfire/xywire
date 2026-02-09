@@ -6,9 +6,9 @@ namespace XywireHost.Core.Graph;
 public sealed record EffectGraphNode(
     int Id,
     string TypeId,
-    float X,
-    float Y,
-    Dictionary<string, IUntypedOutputSlot> OutputsForEmbeddedInputs);
+    Dictionary<string, IUntypedOutputSlot> OutputsForEmbeddedInputs,
+    Dictionary<string, object?> EmbeddedInputValues
+);
 
 public sealed record EffectGraphConnection(int FromNodeId, string FromPort, int ToNodeId, string ToPort);
 
