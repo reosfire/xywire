@@ -60,7 +60,6 @@ public sealed class NodesCanvasView : SKCanvasView
     public NodeInstance<T> AddNode<T>(
         SKPoint position,
         string title,
-        List<string> embeddedInputs,
         List<string> inputPortLabels,
         List<string> outputPortLabels,
         T payload)
@@ -69,7 +68,6 @@ public sealed class NodesCanvasView : SKCanvasView
             id: _currentNodeId++,
             position: position,
             title: title,
-            embeddedInputs: embeddedInputs,
             inputs: inputPortLabels.ToDictionary(label => label, _ => (PortReference?)null),
             outputs: outputPortLabels.ToDictionary(label => label, _ => (PortReference?)null),
             payload: payload
@@ -566,7 +564,6 @@ public interface INodeInstance
     SKPoint Position { get; set; }
 
     string Title { get; }
-    List<string> EmbeddedInputs { get; }
     Dictionary<string, PortReference?> Inputs { get; }
     Dictionary<string, PortReference?> Outputs { get; }
 }
@@ -575,7 +572,6 @@ public class NodeInstance<T>(
     int id,
     SKPoint position,
     string title,
-    List<string> embeddedInputs,
     Dictionary<string, PortReference?> inputs,
     Dictionary<string, PortReference?> outputs,
     T payload
@@ -585,7 +581,6 @@ public class NodeInstance<T>(
     public SKPoint Position { get; set; } = position;
 
     public string Title { get; } = title;
-    public List<string> EmbeddedInputs { get; } = embeddedInputs;
     public Dictionary<string, PortReference?> Inputs { get; } = inputs;
     public Dictionary<string, PortReference?> Outputs { get; } = outputs;
 

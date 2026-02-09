@@ -1,7 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using SkiaSharp;
 using XywireHost.Core;
-using XywireHost.Core.core;
 using XywireHost.Core.Graph;
 using XywireHost.Core.services;
 using XywireHost.UI.Controls;
@@ -9,7 +8,7 @@ using XywireHost.UI.Controls;
 namespace XywireHost.UI.Pages;
 
 public abstract record NodePickerItem(string DisplayName);
-public sealed record ConcreteNodePickerItem(string DisplayName, ConcreteEffectDescriptor Prototype)
+public sealed record ConcreteNodePickerItem(string DisplayName, ConcreteEffectDescriptor ConcreteDescriptor)
     : NodePickerItem(DisplayName);
 public sealed record GenericNodePickerItem(string DisplayName, GenericEffectDescriptor GenericDescriptor)
     : NodePickerItem(DisplayName);
@@ -85,7 +84,6 @@ public partial class NodeEditorPage : ContentPage
         NodeInstance<Payload> result = NodesView.AddNode(
             position: position,
             prototype.DisplayName,
-            prototype.EmbeddedInputs.Select(e => e.Name).ToList(),
             prototype.Inputs.ToList(),
             prototype.Outputs.ToList(),
             new Payload(
@@ -112,11 +110,11 @@ public partial class NodeEditorPage : ContentPage
 
         // Use Type.Name for lookup (Int32, not int)
         string intTypeName = typeof(int).Name; // "Int32"
-        if (!TryGetDefinition($"ConstantEffect<{intTypeName}>", out ConcreteEffectDescriptor? constantInt) ||
-            !TryGetDefinition("RainbowEffect", out ConcreteEffectDescriptor? rainbow) ||
-            !TryGetDefinition("WhiteCircleEffect", out ConcreteEffectDescriptor? whiteCircle) ||
-            !TryGetDefinition("OverlayEffect", out ConcreteEffectDescriptor? overlay) ||
-            !TryGetDefinition("LedLineEffect", out ConcreteEffectDescriptor? ledLine))
+        if (!TryGetDescriptor($"ConstantEffect<{intTypeName}>", out ConcreteEffectDescriptor? constantInt) ||
+            !TryGetDescriptor("RainbowEffect", out ConcreteEffectDescriptor? rainbow) ||
+            !TryGetDescriptor("WhiteCircleEffect", out ConcreteEffectDescriptor? whiteCircle) ||
+            !TryGetDescriptor("OverlayEffect", out ConcreteEffectDescriptor? overlay) ||
+            !TryGetDescriptor("LedLineEffect", out ConcreteEffectDescriptor? ledLine))
         {
             return;
         }
@@ -158,12 +156,12 @@ public partial class NodeEditorPage : ContentPage
             return;
         }
 
-        ConcreteEffectDescriptor? definition;
+        ConcreteEffectDescriptor? descriptor;
 
         switch (selectedItem)
         {
             case ConcreteNodePickerItem concreteItem:
-                definition = concreteItem.Prototype;
+                descriptor = concreteItem.ConcreteDescriptor;
                 break;
 
             case GenericNodePickerItem genericItem:
@@ -182,7 +180,7 @@ public partial class NodeEditorPage : ContentPage
 
                 string typeId = $"{genericItem.GenericDescriptor.BaseTypeId}<{selectedType.Type.Name}>";
                 
-                if (!TryGetDefinition(typeId, out definition))
+                if (!TryGetDescriptor(typeId, out descriptor))
                 {
                     await DisplayAlert("Add Node", "Failed to create generic effect.", "OK");
                     return;
@@ -197,7 +195,7 @@ public partial class NodeEditorPage : ContentPage
 
         float offset = 30f * NodesView.Nodes.Count;
         SKPoint position = new(40f + offset % 240f, 80f + offset % 160f);
-        CreateNodeFromDescriptor(definition, position);
+        CreateNodeFromDescriptor(descriptor, position);
     }
 
     private async void OnRemoveNodeClicked(object sender, EventArgs e)
@@ -279,10 +277,10 @@ public partial class NodeEditorPage : ContentPage
         return model;
     }
 
-    private static bool TryGetDefinition(string typeId, [MaybeNullWhen(false)] out ConcreteEffectDescriptor definition)
+    private static bool TryGetDescriptor(string typeId, [MaybeNullWhen(false)] out ConcreteEffectDescriptor descriptor)
     {
-        definition = EffectNodeCatalog.TryGet(typeId);
-        return definition != null;
+        descriptor = EffectNodeCatalog.TryGet(typeId);
+        return descriptor != null;
     }
 
 
@@ -290,14 +288,20 @@ public partial class NodeEditorPage : ContentPage
     {
         EmbeddedInputsContainer.Children.Clear();
 
-        if (e.SelectedNode == null || e.SelectedNode.EmbeddedInputs.Count == 0)
+        if (e.SelectedNode is not NodeInstance<Payload> node)
+        {
+            SelectedNodeLabel.Text = "Unsupported node type";
+            EmbeddedInputsPanel.IsVisible = false;
+            return;
+        }
+        
+        SelectedNodeLabel.Text = node.Title;
+
+        if (node.Payload.EmbeddedInputs.Count == 0)
         {
             EmbeddedInputsPanel.IsVisible = false;
             return;
         }
-
-        NodeInstance<Payload> node = e.SelectedNode as NodeInstance<Payload>;
-        SelectedNodeLabel.Text = node.Title;
 
         foreach (EmbeddedInputInfo embeddedInput in node.Payload.EmbeddedInputs.Values)
         {
@@ -336,7 +340,7 @@ public partial class NodeEditorPage : ContentPage
             {
                 if (int.TryParse(args.NewTextValue, out int intValue))
                 {
-                    (currentSlot as OutputSlot<int>).Invoke(intValue);
+                    currentSlot.Invoke(intValue);
                     _systemOutputsCurrentValues[(node.Id, inputName)] = intValue;
                 }
             };
@@ -344,7 +348,7 @@ public partial class NodeEditorPage : ContentPage
             // Initialize with default value if not set
             if (currentValue == null && int.TryParse(entry.Text, out int defaultValue))
             {
-                (currentSlot as OutputSlot<int>).Invoke(defaultValue);
+                currentSlot.Invoke(defaultValue);
                 _systemOutputsCurrentValues[(node.Id, inputName)] = defaultValue;
             }
 
@@ -364,7 +368,7 @@ public partial class NodeEditorPage : ContentPage
             {
                 if (float.TryParse(args.NewTextValue, out float floatValue))
                 {
-                    (currentSlot as OutputSlot<float>).Invoke(floatValue);
+                    currentSlot.Invoke(floatValue);
                     _systemOutputsCurrentValues[(node.Id, inputName)] = floatValue;
                 }
             };
@@ -385,7 +389,7 @@ public partial class NodeEditorPage : ContentPage
             {
                 if (double.TryParse(args.NewTextValue, out double doubleValue))
                 {
-                    (currentSlot as OutputSlot<double>).Invoke(doubleValue);
+                    currentSlot.Invoke(doubleValue);
                     _systemOutputsCurrentValues[(node.Id, inputName)] = doubleValue;
                 }
             };
@@ -399,7 +403,7 @@ public partial class NodeEditorPage : ContentPage
 
             entry.TextChanged += (_, args) =>
             {
-                (currentSlot as OutputSlot<string>).Invoke(args.NewTextValue);
+                currentSlot.Invoke(args.NewTextValue);
                 _systemOutputsCurrentValues[(node.Id, inputName)] = args.NewTextValue;
             };
 
@@ -412,7 +416,7 @@ public partial class NodeEditorPage : ContentPage
 
             toggle.Toggled += (_, args) =>
             {
-                (currentSlot as OutputSlot<bool>).Invoke(args.Value);
+                currentSlot.Invoke(args.Value);
                 _systemOutputsCurrentValues[(node.Id, inputName)] = args.Value;
             };
 
