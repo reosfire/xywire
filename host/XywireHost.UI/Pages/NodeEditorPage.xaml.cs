@@ -140,16 +140,18 @@ public partial class NodeEditorPage : ContentPage
             !TryGetDescriptor("SinEffect", out ConcreteEffectDescriptor? sin) ||
             !TryGetDescriptor("MultiplyEffect", out ConcreteEffectDescriptor? multiply) ||
             !TryGetDescriptor("AddEffect", out ConcreteEffectDescriptor? add) ||
-            !TryGetDescriptor("IntToDoubleEffect", out ConcreteEffectDescriptor? intToDouble) ||
-            !TryGetDescriptor("DoubleToIntEffect", out ConcreteEffectDescriptor? doubleToInt))
+            !TryGetDescriptor("IntToDoubleEffect", out ConcreteEffectDescriptor? intToDouble))
         {
             return;
         }
 
         // Constants for dimensions
         NodeInstance<Payload> width = CreateNodeFromDescriptor(constantInt, new SKPoint(40, 40));
+        width.Payload.EmbeddedInputs["value"].InvokeAndSetCurrentValue(14);
         NodeInstance<Payload> height = CreateNodeFromDescriptor(constantInt, new SKPoint(40, 160));
+        height.Payload.EmbeddedInputs["value"].InvokeAndSetCurrentValue(14);
         NodeInstance<Payload> fps = CreateNodeFromDescriptor(constantInt, new SKPoint(40, 280));
+        fps.Payload.EmbeddedInputs["value"].InvokeAndSetCurrentValue(24);
         
         // Multicast nodes to fan out width, height, fps to multiple consumers
         NodeInstance<Payload> widthMulticast = CreateNodeFromDescriptor(multicastInt, new SKPoint(160, 40));
@@ -214,6 +216,7 @@ public partial class NodeEditorPage : ContentPage
         
         // Multiply frame by speed factor (to control oscillation speed)
         NodeInstance<Payload> speedFactor = CreateNodeFromDescriptor(constantDouble, new SKPoint(40, 540));
+        speedFactor.Payload.EmbeddedInputs["value"].InvokeAndSetCurrentValue(0.1);
         NodeInstance<Payload> speedMultiply = CreateNodeFromDescriptor(multiply, new SKPoint(320, 500));
         NodesView.AddConnection(
             new PortReference(frameToDouble.Id, "result", PortType.Output),
@@ -230,6 +233,7 @@ public partial class NodeEditorPage : ContentPage
         
         // Multiply by amplitude (radius range)
         NodeInstance<Payload> amplitude = CreateNodeFromDescriptor(constantDouble, new SKPoint(320, 620));
+        amplitude.Payload.EmbeddedInputs["value"].InvokeAndSetCurrentValue(7 / 2.0 * Math.Sqrt(2));
         NodeInstance<Payload> amplitudeMultiply = CreateNodeFromDescriptor(multiply, new SKPoint(580, 540));
         NodesView.AddConnection(
             new PortReference(sinEffect.Id, "result", PortType.Output),
