@@ -486,7 +486,6 @@ internal class MulticastEffect<T> : BaseEffect
     }
 }
 
-// TODO make it with antialiased raytracing
 internal class WhiteCircleEffect : BaseEffect
 {
     private readonly OutputSlot<IReadOnlyBuffer2D<Color>> _colorsOutput;
@@ -498,8 +497,10 @@ internal class WhiteCircleEffect : BaseEffect
     private int _width;
     private int _height;
     private int _fps;
-    // TODO make it double
-    private int _radius;
+    private double _radius;
+    
+    // SSAA sample count per axis (total samples = _ssaaSamples^2)
+    private const int SsaaSamples = 4;
 
     public WhiteCircleEffect()
     {
@@ -508,7 +509,7 @@ internal class WhiteCircleEffect : BaseEffect
         InputHandles.RegisterInput<int>("width", SetWidth);
         InputHandles.RegisterInput<int>("height", SetHeight);
         InputHandles.RegisterInput<int>("fps", SetFps);
-        InputHandles.RegisterInput<int>("radius", SetRadius);
+        InputHandles.RegisterInput<double>("radius", SetRadius);
     }
 
     public override void Initialize(IEffectContext context)
@@ -519,31 +520,46 @@ internal class WhiteCircleEffect : BaseEffect
 
     private void Render()
     {
-        for (int row = 0; row < _height; row++)
-        {
-            for (int col = 0; col < _width; col++)
-            {
-                _colorBuffer[new Index2D(row, col)] = Color.RGB(0, 0, 0);
-            }
-        }
-        
         double centerRow = _height / 2.0;
         double centerCol = _width / 2.0;
         
+        double sampleStep = 1.0 / SsaaSamples;
+        double sampleOffset = sampleStep / 2.0;
+        int totalSamples = SsaaSamples * SsaaSamples;
+        
         for (int row = 0; row < _height; row++)
         {
             for (int col = 0; col < _width; col++)
             {
-                double dx = col - centerCol;
-                double dy = row - centerRow;
-                double distance = Math.Sqrt(dx * dx + dy * dy);
+                int insideCount = 0;
                 
-                double sdfValue = distance - _radius;
-
-                if (sdfValue < 0)
+                // Sample grid within pixel for SSAA
+                for (int sy = 0; sy < SsaaSamples; sy++)
                 {
-                    _colorBuffer[new Index2D(row, col)] = Color.RGB(255, 255, 255);
+                    for (int sx = 0; sx < SsaaSamples; sx++)
+                    {
+                        double sampleX = col + sampleOffset + sx * sampleStep;
+                        double sampleY = row + sampleOffset + sy * sampleStep;
+                        
+                        double dx = sampleX - centerCol;
+                        double dy = sampleY - centerRow;
+                        double distance = Math.Sqrt(dx * dx + dy * dy);
+                        
+                        // SDF: negative inside circle, positive outside
+                        double sdfValue = distance - _radius;
+                        
+                        if (sdfValue < 0)
+                        {
+                            insideCount++;
+                        }
+                    }
                 }
+                
+                // Calculate coverage ratio for anti-aliasing
+                double coverage = (double)insideCount / totalSamples;
+                byte intensity = (byte)(255 * coverage);
+                
+                _colorBuffer[new Index2D(row, col)] = Color.RGB(intensity, intensity, intensity);
             }
         }
 
@@ -579,7 +595,7 @@ internal class WhiteCircleEffect : BaseEffect
         Restart();
     }
 
-    private void SetRadius(int radius)
+    private void SetRadius(double radius)
     {
         _radius = radius;
     }
@@ -637,6 +653,170 @@ public sealed class LedLineEffect : BaseEffect
         }
 
         _ledLine.SetColors(colors);
+    }
+}
+
+internal class TickerEffect : BaseEffect
+{
+    private readonly OutputSlot<int> _frameOutput;
+
+    private IEffectContext? _context;
+    private TaskHandle? _renderTaskHandle;
+
+    private int _fps;
+    private int _frameCounter;
+
+    public TickerEffect()
+    {
+        _frameOutput = OutputSlots.RegisterOutput<int>("frame");
+        InputHandles.RegisterInput<int>("fps", SetFps);
+    }
+
+    public override void Initialize(IEffectContext context)
+    {
+        _context = context;
+        Restart();
+    }
+
+    private void Tick()
+    {
+        _frameOutput.Invoke(_frameCounter);
+        _frameCounter++;
+    }
+
+    private void Restart()
+    {
+        _renderTaskHandle?.Stop();
+
+        if (_fps <= 0) return;
+        if (_context == null) return;
+
+        _frameCounter = 0;
+        _renderTaskHandle = _context.Scheduler.ScheduleTask(Tick, _fps);
+    }
+
+    private void SetFps(int fps)
+    {
+        _fps = fps;
+        Restart();
+    }
+}
+
+internal class SinEffect : BaseEffect
+{
+    private readonly OutputSlot<double> _output;
+
+    public SinEffect()
+    {
+        _output = OutputSlots.RegisterOutput<double>("result");
+        InputHandles.RegisterInput<double>("value", SetValue);
+    }
+
+    private void SetValue(double value)
+    {
+        _output.Invoke(Math.Sin(value));
+    }
+}
+
+internal class MultiplyEffect : BaseEffect
+{
+    private readonly OutputSlot<double> _output;
+
+    private double? _a;
+    private double? _b;
+
+    public MultiplyEffect()
+    {
+        _output = OutputSlots.RegisterOutput<double>("result");
+        InputHandles.RegisterInput<double>("a", SetA);
+        InputHandles.RegisterInput<double>("b", SetB);
+    }
+
+    private void SetA(double value)
+    {
+        _a = value;
+        TryCompute();
+    }
+
+    private void SetB(double value)
+    {
+        _b = value;
+        TryCompute();
+    }
+
+    private void TryCompute()
+    {
+        if (_a.HasValue && _b.HasValue)
+        {
+            _output.Invoke(_a.Value * _b.Value);
+        }
+    }
+}
+
+internal class IntToDoubleEffect : BaseEffect
+{
+    private readonly OutputSlot<double> _output;
+
+    public IntToDoubleEffect()
+    {
+        _output = OutputSlots.RegisterOutput<double>("result");
+        InputHandles.RegisterInput<int>("value", SetValue);
+    }
+
+    private void SetValue(int value)
+    {
+        _output.Invoke(value);
+    }
+}
+
+internal class DoubleToIntEffect : BaseEffect
+{
+    private readonly OutputSlot<int> _output;
+
+    public DoubleToIntEffect()
+    {
+        _output = OutputSlots.RegisterOutput<int>("result");
+        InputHandles.RegisterInput<double>("value", SetValue);
+    }
+
+    private void SetValue(double value)
+    {
+        _output.Invoke((int)value);
+    }
+}
+
+internal class AddEffect : BaseEffect
+{
+    private readonly OutputSlot<double> _output;
+
+    private double? _a;
+    private double? _b;
+
+    public AddEffect()
+    {
+        _output = OutputSlots.RegisterOutput<double>("result");
+        InputHandles.RegisterInput<double>("a", SetA);
+        InputHandles.RegisterInput<double>("b", SetB);
+    }
+
+    private void SetA(double value)
+    {
+        _a = value;
+        TryCompute();
+    }
+
+    private void SetB(double value)
+    {
+        _b = value;
+        TryCompute();
+    }
+
+    private void TryCompute()
+    {
+        if (_a.HasValue && _b.HasValue)
+        {
+            _output.Invoke(_a.Value + _b.Value);
+        }
     }
 }
 

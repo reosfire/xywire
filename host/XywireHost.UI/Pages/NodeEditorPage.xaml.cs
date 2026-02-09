@@ -123,31 +123,140 @@ public partial class NodeEditorPage : ContentPage
     private void SeedSampleGraph()
     {
         EnsureGenericEffectRegistered("ConstantEffect", typeof(int));
+        EnsureGenericEffectRegistered("ConstantEffect", typeof(double));
+        EnsureGenericEffectRegistered("MulticastEffect", typeof(int));
         
         string intTypeName = typeof(int).Name; // "Int32"
+        string doubleTypeName = typeof(double).Name; // "Double"
+        
         if (!TryGetDescriptor($"ConstantEffect<{intTypeName}>", out ConcreteEffectDescriptor? constantInt) ||
+            !TryGetDescriptor($"ConstantEffect<{doubleTypeName}>", out ConcreteEffectDescriptor? constantDouble) ||
+            !TryGetDescriptor($"MulticastEffect<{intTypeName}>", out ConcreteEffectDescriptor? multicastInt) ||
             !TryGetDescriptor("RainbowEffect", out ConcreteEffectDescriptor? rainbow) ||
             !TryGetDescriptor("WhiteCircleEffect", out ConcreteEffectDescriptor? whiteCircle) ||
             !TryGetDescriptor("OverlayEffect", out ConcreteEffectDescriptor? overlay) ||
-            !TryGetDescriptor("LedLineEffect", out ConcreteEffectDescriptor? ledLine))
+            !TryGetDescriptor("LedLineEffect", out ConcreteEffectDescriptor? ledLine) ||
+            !TryGetDescriptor("TickerEffect", out ConcreteEffectDescriptor? ticker) ||
+            !TryGetDescriptor("SinEffect", out ConcreteEffectDescriptor? sin) ||
+            !TryGetDescriptor("MultiplyEffect", out ConcreteEffectDescriptor? multiply) ||
+            !TryGetDescriptor("AddEffect", out ConcreteEffectDescriptor? add) ||
+            !TryGetDescriptor("IntToDoubleEffect", out ConcreteEffectDescriptor? intToDouble) ||
+            !TryGetDescriptor("DoubleToIntEffect", out ConcreteEffectDescriptor? doubleToInt))
         {
             return;
         }
 
+        // Constants for dimensions
         NodeInstance<Payload> width = CreateNodeFromDescriptor(constantInt, new SKPoint(40, 40));
         NodeInstance<Payload> height = CreateNodeFromDescriptor(constantInt, new SKPoint(40, 160));
         NodeInstance<Payload> fps = CreateNodeFromDescriptor(constantInt, new SKPoint(40, 280));
-        NodeInstance<Payload> output = CreateNodeFromDescriptor(rainbow, new SKPoint(320, 120));
-
+        
+        // Multicast nodes to fan out width, height, fps to multiple consumers
+        NodeInstance<Payload> widthMulticast = CreateNodeFromDescriptor(multicastInt, new SKPoint(160, 40));
+        NodeInstance<Payload> heightMulticast = CreateNodeFromDescriptor(multicastInt, new SKPoint(160, 160));
+        NodeInstance<Payload> fpsMulticast1 = CreateNodeFromDescriptor(multicastInt, new SKPoint(160, 280));
+        NodeInstance<Payload> fpsMulticast2 = CreateNodeFromDescriptor(multicastInt, new SKPoint(160, 340)); // For ticker
+        
+        // Connect constants to multicast nodes
         NodesView.AddConnection(
             new PortReference(width.Id, "value", PortType.Output),
-            new PortReference(output.Id, "width", PortType.Input));
+            new PortReference(widthMulticast.Id, "colorBuffer", PortType.Input));
         NodesView.AddConnection(
             new PortReference(height.Id, "value", PortType.Output),
-            new PortReference(output.Id, "height", PortType.Input));
+            new PortReference(heightMulticast.Id, "colorBuffer", PortType.Input));
         NodesView.AddConnection(
             new PortReference(fps.Id, "value", PortType.Output),
-            new PortReference(output.Id, "fps", PortType.Input));
+            new PortReference(fpsMulticast1.Id, "colorBuffer", PortType.Input));
+        // Chain fpsMulticast1.output1 -> fpsMulticast2 to get 3 outputs for fps
+        NodesView.AddConnection(
+            new PortReference(fpsMulticast1.Id, "output1", PortType.Output),
+            new PortReference(fpsMulticast2.Id, "colorBuffer", PortType.Input));
+        
+        // Rainbow effect (background)
+        NodeInstance<Payload> rainbowEffect = CreateNodeFromDescriptor(rainbow, new SKPoint(380, 120));
+        
+        // Connect dimensions to rainbow via multicast
+        NodesView.AddConnection(
+            new PortReference(widthMulticast.Id, "output0", PortType.Output),
+            new PortReference(rainbowEffect.Id, "width", PortType.Input));
+        NodesView.AddConnection(
+            new PortReference(heightMulticast.Id, "output0", PortType.Output),
+            new PortReference(rainbowEffect.Id, "height", PortType.Input));
+        NodesView.AddConnection(
+            new PortReference(fpsMulticast1.Id, "output0", PortType.Output),
+            new PortReference(rainbowEffect.Id, "fps", PortType.Input));
+        
+        // White circle effect
+        NodeInstance<Payload> circleEffect = CreateNodeFromDescriptor(whiteCircle, new SKPoint(380, 320));
+        
+        // Connect dimensions to circle via multicast
+        NodesView.AddConnection(
+            new PortReference(widthMulticast.Id, "output1", PortType.Output),
+            new PortReference(circleEffect.Id, "width", PortType.Input));
+        NodesView.AddConnection(
+            new PortReference(heightMulticast.Id, "output1", PortType.Output),
+            new PortReference(circleEffect.Id, "height", PortType.Input));
+        NodesView.AddConnection(
+            new PortReference(fpsMulticast2.Id, "output0", PortType.Output),
+            new PortReference(circleEffect.Id, "fps", PortType.Input));
+        
+        // Ticker for animation (frame counter)
+        NodeInstance<Payload> tickerEffect = CreateNodeFromDescriptor(ticker, new SKPoint(40, 420));
+        NodesView.AddConnection(
+            new PortReference(fpsMulticast2.Id, "output1", PortType.Output),
+            new PortReference(tickerEffect.Id, "fps", PortType.Input));
+        
+        // Convert frame (int) to double
+        NodeInstance<Payload> frameToDouble = CreateNodeFromDescriptor(intToDouble, new SKPoint(180, 420));
+        NodesView.AddConnection(
+            new PortReference(tickerEffect.Id, "frame", PortType.Output),
+            new PortReference(frameToDouble.Id, "value", PortType.Input));
+        
+        // Multiply frame by speed factor (to control oscillation speed)
+        NodeInstance<Payload> speedFactor = CreateNodeFromDescriptor(constantDouble, new SKPoint(40, 540));
+        NodeInstance<Payload> speedMultiply = CreateNodeFromDescriptor(multiply, new SKPoint(320, 500));
+        NodesView.AddConnection(
+            new PortReference(frameToDouble.Id, "result", PortType.Output),
+            new PortReference(speedMultiply.Id, "a", PortType.Input));
+        NodesView.AddConnection(
+            new PortReference(speedFactor.Id, "value", PortType.Output),
+            new PortReference(speedMultiply.Id, "b", PortType.Input));
+        
+        // Apply sin function
+        NodeInstance<Payload> sinEffect = CreateNodeFromDescriptor(sin, new SKPoint(460, 500));
+        NodesView.AddConnection(
+            new PortReference(speedMultiply.Id, "result", PortType.Output),
+            new PortReference(sinEffect.Id, "value", PortType.Input));
+        
+        // Multiply by amplitude (radius range)
+        NodeInstance<Payload> amplitude = CreateNodeFromDescriptor(constantDouble, new SKPoint(320, 620));
+        NodeInstance<Payload> amplitudeMultiply = CreateNodeFromDescriptor(multiply, new SKPoint(580, 540));
+        NodesView.AddConnection(
+            new PortReference(sinEffect.Id, "result", PortType.Output),
+            new PortReference(amplitudeMultiply.Id, "a", PortType.Input));
+        NodesView.AddConnection(
+            new PortReference(amplitude.Id, "value", PortType.Output),
+            new PortReference(amplitudeMultiply.Id, "b", PortType.Input));
+        
+        // Connect radius directly to circle (now takes double)
+        NodesView.AddConnection(
+            new PortReference(amplitudeMultiply.Id, "result", PortType.Output),
+            new PortReference(circleEffect.Id, "radius", PortType.Input));
+        
+        // Overlay effect (combine rainbow + circle)
+        NodeInstance<Payload> overlayEffect = CreateNodeFromDescriptor(overlay, new SKPoint(620, 220));
+        NodesView.AddConnection(
+            new PortReference(rainbowEffect.Id, "colorBuffer", PortType.Output),
+            new PortReference(overlayEffect.Id, "colorBuffer0", PortType.Input));
+        NodesView.AddConnection(
+            new PortReference(circleEffect.Id, "colorBuffer", PortType.Output),
+            new PortReference(overlayEffect.Id, "colorBuffer1", PortType.Input));
+        
+        // LED Line output
+        NodeInstance<Payload> ledLineEffect = CreateNodeFromDescriptor(ledLine, new SKPoint(800, 220));
+        NodesView.AddConnection(
+            new PortReference(overlayEffect.Id, "colorBuffer", PortType.Output),
+            new PortReference(ledLineEffect.Id, "colorBuffer", PortType.Input));
     }
 
     private void EnsureGenericEffectRegistered(string baseTypeId, params Type[] typeArguments)
