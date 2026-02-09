@@ -30,6 +30,10 @@
                         Clicked="OnFitViewClicked" />
                 <Button Text="Compile"
                         Clicked="OnCompileGraphClicked" />
+                <Button Text="Save Graph"
+                        Clicked="OnSaveGraphClicked" />
+                <Button Text="Load Graph"
+                        Clicked="OnLoadGraphClicked" />
             </HorizontalStackLayout>
         </VerticalStackLayout>
 

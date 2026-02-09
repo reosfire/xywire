@@ -1,9 +1,12 @@
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Text.Json;
 using SkiaSharp;
 using XywireHost.Core;
 using XywireHost.Core.Graph;
 using XywireHost.Core.services;
 using XywireHost.UI.Controls;
+using Switch = Microsoft.Maui.Controls.Switch;
 
 namespace XywireHost.UI.Pages;
 
@@ -25,7 +28,8 @@ public class EmbeddedInputInfo(
     Type valueType,
     IUntypedOutputSlot outputSlot,
     object? currentValue
-) {
+)
+{
     public string Name { get; } = name;
     public Type ValueType { get; } = valueType;
     public IUntypedOutputSlot OutputSlot { get; } = outputSlot;
@@ -38,6 +42,33 @@ public class EmbeddedInputInfo(
     }
 }
 
+// Serializable graph models
+public record SerializableEmbeddedInput(
+    string Name,
+    string ValueTypeName,
+    object? Value
+);
+
+public record SerializableNode(
+    int NodeId,
+    string TypeId,
+    float PositionX,
+    float PositionY,
+    List<SerializableEmbeddedInput> EmbeddedInputs
+);
+
+public record SerializableConnection(
+    int FromNodeId,
+    string FromPort,
+    int ToNodeId,
+    string ToPort
+);
+
+public record SerializableGraph(
+    List<SerializableNode> Nodes,
+    List<SerializableConnection> Connections
+);
+
 public partial class NodeEditorPage : ContentPage
 {
     private readonly EffectService _effectService;
@@ -45,6 +76,8 @@ public partial class NodeEditorPage : ContentPage
     private readonly List<NodePickerItem> _pickerItems = [];
 
     private readonly EffectOutputsCollection _systemOutputs = new();
+
+    private int _outputId = 0;
 
     public NodeEditorPage(EffectService effectService)
     {
@@ -92,8 +125,6 @@ public partial class NodeEditorPage : ContentPage
         return _pickerItems[NodePicker.SelectedIndex];
     }
 
-    private int _outputId = 0;
-
     private NodeInstance<Payload> CreateNodeFromDescriptor(ConcreteEffectDescriptor prototype, SKPoint position)
     {
         Dictionary<string, EmbeddedInputInfo> embeddedInputs = prototype.EmbeddedInputs.ToDictionary(
@@ -107,7 +138,7 @@ public partial class NodeEditorPage : ContentPage
         );
 
         NodeInstance<Payload> result = NodesView.AddNode(
-            position: position,
+            position,
             prototype.DisplayName,
             prototype.Inputs.ToList(),
             prototype.Outputs.ToList(),
@@ -122,13 +153,33 @@ public partial class NodeEditorPage : ContentPage
 
     private void SeedSampleGraph()
     {
+        string graphPath = GetDefaultGraphPath();
+        if (File.Exists(graphPath))
+        {
+            try
+            {
+                LoadGraphFromFile(graphPath);
+                return;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Failed to load graph: {ex.Message}");
+            }
+        }
+
+        CreateDefaultSampleGraph();
+        SaveGraphToFile(graphPath);
+    }
+
+    private void CreateDefaultSampleGraph()
+    {
         EnsureGenericEffectRegistered("ConstantEffect", typeof(int));
         EnsureGenericEffectRegistered("ConstantEffect", typeof(double));
         EnsureGenericEffectRegistered("MulticastEffect", typeof(int));
-        
+
         string intTypeName = typeof(int).Name; // "Int32"
         string doubleTypeName = typeof(double).Name; // "Double"
-        
+
         if (!TryGetDescriptor($"ConstantEffect<{intTypeName}>", out ConcreteEffectDescriptor? constantInt) ||
             !TryGetDescriptor($"ConstantEffect<{doubleTypeName}>", out ConcreteEffectDescriptor? constantDouble) ||
             !TryGetDescriptor($"MulticastEffect<{intTypeName}>", out ConcreteEffectDescriptor? multicastInt) ||
@@ -152,13 +203,14 @@ public partial class NodeEditorPage : ContentPage
         height.Payload.EmbeddedInputs["value"].InvokeAndSetCurrentValue(14);
         NodeInstance<Payload> fps = CreateNodeFromDescriptor(constantInt, new SKPoint(40, 280));
         fps.Payload.EmbeddedInputs["value"].InvokeAndSetCurrentValue(24);
-        
+
         // Multicast nodes to fan out width, height, fps to multiple consumers
         NodeInstance<Payload> widthMulticast = CreateNodeFromDescriptor(multicastInt, new SKPoint(160, 40));
         NodeInstance<Payload> heightMulticast = CreateNodeFromDescriptor(multicastInt, new SKPoint(160, 160));
         NodeInstance<Payload> fpsMulticast1 = CreateNodeFromDescriptor(multicastInt, new SKPoint(160, 280));
-        NodeInstance<Payload> fpsMulticast2 = CreateNodeFromDescriptor(multicastInt, new SKPoint(160, 340)); // For ticker
-        
+        NodeInstance<Payload>
+            fpsMulticast2 = CreateNodeFromDescriptor(multicastInt, new SKPoint(160, 340)); // For ticker
+
         // Connect constants to multicast nodes
         NodesView.AddConnection(
             new PortReference(width.Id, "value", PortType.Output),
@@ -173,10 +225,10 @@ public partial class NodeEditorPage : ContentPage
         NodesView.AddConnection(
             new PortReference(fpsMulticast1.Id, "output1", PortType.Output),
             new PortReference(fpsMulticast2.Id, "colorBuffer", PortType.Input));
-        
+
         // Rainbow effect (background)
         NodeInstance<Payload> rainbowEffect = CreateNodeFromDescriptor(rainbow, new SKPoint(380, 120));
-        
+
         // Connect dimensions to rainbow via multicast
         NodesView.AddConnection(
             new PortReference(widthMulticast.Id, "output0", PortType.Output),
@@ -187,10 +239,10 @@ public partial class NodeEditorPage : ContentPage
         NodesView.AddConnection(
             new PortReference(fpsMulticast1.Id, "output0", PortType.Output),
             new PortReference(rainbowEffect.Id, "fps", PortType.Input));
-        
+
         // White circle effect
         NodeInstance<Payload> circleEffect = CreateNodeFromDescriptor(whiteCircle, new SKPoint(380, 320));
-        
+
         // Connect dimensions to circle via multicast
         NodesView.AddConnection(
             new PortReference(widthMulticast.Id, "output1", PortType.Output),
@@ -201,19 +253,19 @@ public partial class NodeEditorPage : ContentPage
         NodesView.AddConnection(
             new PortReference(fpsMulticast2.Id, "output0", PortType.Output),
             new PortReference(circleEffect.Id, "fps", PortType.Input));
-        
+
         // Ticker for animation (frame counter)
         NodeInstance<Payload> tickerEffect = CreateNodeFromDescriptor(ticker, new SKPoint(40, 420));
         NodesView.AddConnection(
             new PortReference(fpsMulticast2.Id, "output1", PortType.Output),
             new PortReference(tickerEffect.Id, "fps", PortType.Input));
-        
+
         // Convert frame (int) to double
         NodeInstance<Payload> frameToDouble = CreateNodeFromDescriptor(intToDouble, new SKPoint(180, 420));
         NodesView.AddConnection(
             new PortReference(tickerEffect.Id, "frame", PortType.Output),
             new PortReference(frameToDouble.Id, "value", PortType.Input));
-        
+
         // Multiply frame by speed factor (to control oscillation speed)
         NodeInstance<Payload> speedFactor = CreateNodeFromDescriptor(constantDouble, new SKPoint(40, 540));
         speedFactor.Payload.EmbeddedInputs["value"].InvokeAndSetCurrentValue(0.1);
@@ -224,13 +276,13 @@ public partial class NodeEditorPage : ContentPage
         NodesView.AddConnection(
             new PortReference(speedFactor.Id, "value", PortType.Output),
             new PortReference(speedMultiply.Id, "b", PortType.Input));
-        
+
         // Apply sin function
         NodeInstance<Payload> sinEffect = CreateNodeFromDescriptor(sin, new SKPoint(460, 500));
         NodesView.AddConnection(
             new PortReference(speedMultiply.Id, "result", PortType.Output),
             new PortReference(sinEffect.Id, "value", PortType.Input));
-        
+
         // Multiply by amplitude (radius range)
         NodeInstance<Payload> amplitude = CreateNodeFromDescriptor(constantDouble, new SKPoint(320, 620));
         amplitude.Payload.EmbeddedInputs["value"].InvokeAndSetCurrentValue(7 / 2.0 * Math.Sqrt(2));
@@ -241,12 +293,12 @@ public partial class NodeEditorPage : ContentPage
         NodesView.AddConnection(
             new PortReference(amplitude.Id, "value", PortType.Output),
             new PortReference(amplitudeMultiply.Id, "b", PortType.Input));
-        
+
         // Connect radius directly to circle (now takes double)
         NodesView.AddConnection(
             new PortReference(amplitudeMultiply.Id, "result", PortType.Output),
             new PortReference(circleEffect.Id, "radius", PortType.Input));
-        
+
         // Overlay effect (combine rainbow + circle)
         NodeInstance<Payload> overlayEffect = CreateNodeFromDescriptor(overlay, new SKPoint(620, 220));
         NodesView.AddConnection(
@@ -255,12 +307,201 @@ public partial class NodeEditorPage : ContentPage
         NodesView.AddConnection(
             new PortReference(circleEffect.Id, "colorBuffer", PortType.Output),
             new PortReference(overlayEffect.Id, "colorBuffer1", PortType.Input));
-        
+
         // LED Line output
         NodeInstance<Payload> ledLineEffect = CreateNodeFromDescriptor(ledLine, new SKPoint(800, 220));
         NodesView.AddConnection(
             new PortReference(overlayEffect.Id, "colorBuffer", PortType.Output),
             new PortReference(ledLineEffect.Id, "colorBuffer", PortType.Input));
+    }
+
+    private string GetDefaultGraphPath()
+    {
+        string appDataPath = FileSystem.AppDataDirectory;
+        return Path.Combine(appDataPath, "default_graph.json");
+    }
+
+    private void SaveGraphToFile(string filePath)
+    {
+        try
+        {
+            string? directory = Path.GetDirectoryName(filePath);
+            if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+            
+            List<SerializableNode> nodes = [];
+            foreach ((int nodeId, INodeInstance nodeInstance) in NodesView.Nodes)
+            {
+                if (nodeInstance is not NodeInstance<Payload> node) continue;
+
+                List<SerializableEmbeddedInput> embeddedInputs = node.Payload.EmbeddedInputs
+                    .Select(kvp => new SerializableEmbeddedInput(
+                        kvp.Key,
+                        kvp.Value.ValueType.Name,
+                        kvp.Value.CurrentValue
+                    ))
+                    .ToList();
+
+                nodes.Add(new SerializableNode(
+                    nodeId,
+                    node.Payload.TypeId,
+                    node.Position.X,
+                    node.Position.Y,
+                    embeddedInputs
+                ));
+            }
+            
+            List<SerializableConnection> connections = [];
+            foreach ((int fromNodeId, INodeInstance fromNode) in NodesView.Nodes)
+            {
+                foreach ((string fromPort, PortReference? toPort) in fromNode.Outputs)
+                {
+                    if (toPort is null) continue;
+
+                    connections.Add(new SerializableConnection(
+                        fromNodeId,
+                        fromPort,
+                        toPort.Value.NodeId,
+                        toPort.Value.PortId
+                    ));
+                }
+            }
+
+            SerializableGraph serializableGraph = new(nodes, connections);
+            
+            JsonSerializerOptions options = new() { WriteIndented = true };
+            string json = JsonSerializer.Serialize(serializableGraph, options);
+            File.WriteAllText(filePath, json);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Failed to save graph: {ex.Message}");
+        }
+    }
+
+    private void LoadGraphFromFile(string filePath)
+    {
+        try
+        {
+            List<int> nodeIdsToRemove = NodesView.Nodes.Keys.ToList();
+            foreach (int nodeId in nodeIdsToRemove)
+            {
+                NodesView.RemoveNode(nodeId);
+            }
+
+            _outputId = 0;
+
+            string json = File.ReadAllText(filePath);
+            SerializableGraph? serializableGraph = JsonSerializer.Deserialize<SerializableGraph>(json);
+
+            if (serializableGraph == null)
+                throw new InvalidOperationException("Failed to deserialize graph");
+            
+            Dictionary<int, NodeInstance<Payload>> nodeMap = new();
+
+            // Recreate nodes
+            foreach (SerializableNode serializedNode in serializableGraph.Nodes)
+            {
+                if (!TryGetDescriptor(serializedNode.TypeId, out ConcreteEffectDescriptor? descriptor))
+                {
+                    // Try to register generic effect if needed
+                    if (serializedNode.TypeId.Contains("<") && serializedNode.TypeId.Contains(">"))
+                    {
+                        // Extract base type and type argument
+                        int startIndex = serializedNode.TypeId.IndexOf('<');
+                        int endIndex = serializedNode.TypeId.LastIndexOf('>');
+                        string baseTypeId = serializedNode.TypeId.Substring(0, startIndex);
+                        string typeArgStr = serializedNode.TypeId.Substring(startIndex + 1, endIndex - startIndex - 1);
+
+                        // Try to resolve the type
+                        Type? typeArg = Type.GetType($"System.{typeArgStr}");
+                        if (typeArg != null)
+                        {
+                            EnsureGenericEffectRegistered(baseTypeId, typeArg);
+                            if (!TryGetDescriptor(serializedNode.TypeId, out descriptor))
+                                continue;
+                        }
+                        else
+                        {
+                            continue;
+                        }
+                    }
+                    else
+                    {
+                        continue;
+                    }
+                }
+
+                // Create node
+                SKPoint position = new(serializedNode.PositionX, serializedNode.PositionY);
+                NodeInstance<Payload> newNode = CreateNodeFromDescriptor(descriptor, position);
+                nodeMap[serializedNode.NodeId] = newNode;
+
+                // Restore embedded input values
+                foreach (SerializableEmbeddedInput embeddedInput in serializedNode.EmbeddedInputs)
+                {
+                    if (embeddedInput.Value == null) continue;
+                    
+                    if (!newNode.Payload.EmbeddedInputs.TryGetValue(embeddedInput.Name,
+                            out EmbeddedInputInfo? inputInfo)) continue;
+                    
+                    try
+                    {
+                        // Convert value to the correct type
+                        object? convertedValue = ConvertValue(embeddedInput.Value, embeddedInput.ValueTypeName, inputInfo.ValueType);
+                        if (convertedValue != null)
+                        {
+                            inputInfo.InvokeAndSetCurrentValue(convertedValue);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"Failed to convert value: {ex.Message}");
+                    }
+                }
+            }
+
+            // Restore connections
+            foreach (SerializableConnection connection in serializableGraph.Connections)
+            {
+                if (nodeMap.TryGetValue(connection.FromNodeId, out NodeInstance<Payload>? fromNode) &&
+                    nodeMap.TryGetValue(connection.ToNodeId, out NodeInstance<Payload>? toNode))
+                {
+                    NodesView.AddConnection(
+                        new PortReference(fromNode.Id, connection.FromPort, PortType.Output),
+                        new PortReference(toNode.Id, connection.ToPort, PortType.Input)
+                    );
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Failed to load graph: {ex.Message}");
+            throw;
+        }
+    }
+
+    private object? ConvertValue(object? value, string valueTypeName, Type targetType)
+    {
+        if (value == null)
+            return null;
+
+        if (value.GetType() == targetType)
+            return value;
+        
+        if (value is JsonElement jsonElement)
+        {
+            return valueTypeName switch
+            {
+                "Double" => jsonElement.GetDouble(),
+                "Int32" => jsonElement.GetInt32(),
+                _ => null,
+            };
+        }
+
+        return null;
     }
 
     private void EnsureGenericEffectRegistered(string baseTypeId, params Type[] typeArguments)
@@ -274,6 +515,7 @@ public partial class NodeEditorPage : ContentPage
         ConcreteEffectDescriptor concreteDescriptor = genericDescriptor.MakeConcreteDescriptor(typeArguments);
         EffectNodeCatalog.RegisterConcreteDescriptor(concreteDescriptor);
     }
+
 
     private async void OnAddNodeClicked(object sender, EventArgs e)
     {
@@ -356,7 +598,7 @@ public partial class NodeEditorPage : ContentPage
                         outputSlot.Invoke(_effectService.ConnectedLedLine);
                         continue;
                     }
-                    
+
                     if (effectGraphNode.EmbeddedInputValues.TryGetValue(inputId, out object? value))
                     {
                         outputSlot.Invoke(value);
@@ -372,6 +614,40 @@ public partial class NodeEditorPage : ContentPage
         await DisplayAlertAsync("Compile Graph", errors, "OK");
     }
 
+    private async void OnSaveGraphClicked(object sender, EventArgs e)
+    {
+        try
+        {
+            string filePath = GetDefaultGraphPath();
+            SaveGraphToFile(filePath);
+            await DisplayAlertAsync("Save Graph", "Graph saved successfully.", "OK");
+        }
+        catch (Exception ex)
+        {
+            await DisplayAlertAsync("Save Graph", $"Failed to save graph: {ex.Message}", "OK");
+        }
+    }
+
+    private async void OnLoadGraphClicked(object sender, EventArgs e)
+    {
+        try
+        {
+            string filePath = GetDefaultGraphPath();
+            if (!File.Exists(filePath))
+            {
+                await DisplayAlertAsync("Load Graph", "No saved graph found.", "OK");
+                return;
+            }
+
+            LoadGraphFromFile(filePath);
+            await DisplayAlertAsync("Load Graph", "Graph loaded successfully.", "OK");
+        }
+        catch (Exception ex)
+        {
+            await DisplayAlertAsync("Load Graph", $"Failed to load graph: {ex.Message}", "OK");
+        }
+    }
+
     private EffectGraphModel BuildGraphModel()
     {
         EffectGraphModel model = new();
@@ -379,12 +655,12 @@ public partial class NodeEditorPage : ContentPage
         foreach (INodeInstance nodeInstance in NodesView.Nodes.Values)
         {
             if (nodeInstance is not NodeInstance<Payload> node) continue;
-            
+
             Dictionary<string, IUntypedOutputSlot> outputsForEmbeddedInputs = node.Payload.EmbeddedInputs.ToDictionary(
                 kvp => kvp.Key,
                 kvp => kvp.Value.OutputSlot
             );
-            
+
             Dictionary<string, object?> currentValuesForEmbeddedInputs = node.Payload.EmbeddedInputs.ToDictionary(
                 kvp => kvp.Key,
                 kvp => kvp.Value.CurrentValue
@@ -451,7 +727,7 @@ public partial class NodeEditorPage : ContentPage
             View editor = CreateEditorForInput(embeddedInput);
 
             VerticalStackLayout inputLayout = new() { Spacing = 4 };
-            inputLayout.Children.Add(new Label { Text = embeddedInput.Name, FontSize = 12, TextColor = Colors.Gray, });
+            inputLayout.Children.Add(new Label { Text = embeddedInput.Name, FontSize = 12, TextColor = Colors.Gray });
             inputLayout.Children.Add(editor);
             EmbeddedInputsContainer.Children.Add(inputLayout);
         }
@@ -477,7 +753,7 @@ public partial class NodeEditorPage : ContentPage
                     inputInfo.InvokeAndSetCurrentValue(intValue);
                 }
             };
-            
+
             if (inputInfo.CurrentValue == null && int.TryParse(entry.Text, out int defaultValue))
             {
                 inputInfo.InvokeAndSetCurrentValue(defaultValue);
