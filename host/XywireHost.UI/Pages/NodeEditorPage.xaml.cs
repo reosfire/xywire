@@ -330,7 +330,7 @@ public partial class NodeEditorPage : ContentPage
             {
                 Directory.CreateDirectory(directory);
             }
-            
+
             List<SerializableNode> nodes = [];
             foreach ((int nodeId, INodeInstance nodeInstance) in NodesView.Nodes)
             {
@@ -352,7 +352,7 @@ public partial class NodeEditorPage : ContentPage
                     embeddedInputs
                 ));
             }
-            
+
             List<SerializableConnection> connections = [];
             foreach ((int fromNodeId, INodeInstance fromNode) in NodesView.Nodes)
             {
@@ -370,7 +370,7 @@ public partial class NodeEditorPage : ContentPage
             }
 
             SerializableGraph serializableGraph = new(nodes, connections);
-            
+
             JsonSerializerOptions options = new() { WriteIndented = true };
             string json = JsonSerializer.Serialize(serializableGraph, options);
             File.WriteAllText(filePath, json);
@@ -398,7 +398,7 @@ public partial class NodeEditorPage : ContentPage
 
             if (serializableGraph == null)
                 throw new InvalidOperationException("Failed to deserialize graph");
-            
+
             Dictionary<int, NodeInstance<Payload>> nodeMap = new();
 
             // Recreate nodes
@@ -443,14 +443,15 @@ public partial class NodeEditorPage : ContentPage
                 foreach (SerializableEmbeddedInput embeddedInput in serializedNode.EmbeddedInputs)
                 {
                     if (embeddedInput.Value == null) continue;
-                    
+
                     if (!newNode.Payload.EmbeddedInputs.TryGetValue(embeddedInput.Name,
                             out EmbeddedInputInfo? inputInfo)) continue;
-                    
+
                     try
                     {
                         // Convert value to the correct type
-                        object? convertedValue = ConvertValue(embeddedInput.Value, embeddedInput.ValueTypeName, inputInfo.ValueType);
+                        object? convertedValue = ConvertValue(embeddedInput.Value, embeddedInput.ValueTypeName,
+                            inputInfo.ValueType);
                         if (convertedValue != null)
                         {
                             inputInfo.InvokeAndSetCurrentValue(convertedValue);
@@ -490,7 +491,7 @@ public partial class NodeEditorPage : ContentPage
 
         if (value.GetType() == targetType)
             return value;
-        
+
         if (value is JsonElement jsonElement)
         {
             return valueTypeName switch
@@ -581,37 +582,58 @@ public partial class NodeEditorPage : ContentPage
 
     private void OnFitViewClicked(object sender, EventArgs e) => NodesView.FitToContent();
 
+    private IGraphCompilationResult? _lastCompilationResult;
+    private EffectContext? _lastContext;
+
     private async void OnCompileGraphClicked(object sender, EventArgs e)
     {
-        EffectGraphModel model = BuildGraphModel();
-        EffectGraphCompilationResult result = EffectGraphCompiler.Compile(model, new EffectContext());
-
-        if (result.Success)
+        if (_lastCompilationResult is SuccessfulGraphCompilationResult successfulLastResult)
         {
-            foreach (EffectGraphNode effectGraphNode in model.Nodes)
+            foreach (IEffectNodeInstance instance in successfulLastResult.Instances.Values)
             {
-                foreach ((string inputId, IUntypedOutputSlot outputSlot) in effectGraphNode.OutputsForEmbeddedInputs)
-                {
-                    // TODO: do something with this sh
-                    if (inputId == "ledLine")
-                    {
-                        outputSlot.Invoke(_effectService.ConnectedLedLine);
-                        continue;
-                    }
-
-                    if (effectGraphNode.EmbeddedInputValues.TryGetValue(inputId, out object? value))
-                    {
-                        outputSlot.Invoke(value);
-                    }
-                }
+                instance.Cleanup();
             }
-
-            await DisplayAlertAsync("Compile Graph", "Graph compiled successfully.", "OK");
-            return;
+            _lastContext?.Scheduler.StopAll();
         }
+        
+        EffectGraphModel model = BuildGraphModel();
 
-        string errors = string.Join(Environment.NewLine, result.Errors);
-        await DisplayAlertAsync("Compile Graph", errors, "OK");
+        _lastContext = new EffectContext();
+        _lastCompilationResult = EffectGraphCompiler.Compile(model, _lastContext);
+
+        switch (_lastCompilationResult)
+        {
+            case SuccessfulGraphCompilationResult:
+                {
+                    foreach (EffectGraphNode effectGraphNode in model.Nodes)
+                    {
+                        foreach ((string inputId, IUntypedOutputSlot outputSlot) in effectGraphNode
+                                     .OutputsForEmbeddedInputs)
+                        {
+                            // TODO: do something with this sh
+                            if (inputId == "ledLine")
+                            {
+                                outputSlot.Invoke(_effectService.ConnectedLedLine);
+                                continue;
+                            }
+
+                            if (effectGraphNode.EmbeddedInputValues.TryGetValue(inputId, out object? value))
+                            {
+                                outputSlot.Invoke(value);
+                            }
+                        }
+                    }
+
+                    await DisplayAlertAsync("Compile Graph", "Graph compiled successfully.", "OK");
+                    break;
+                }
+            case FailedGraphCompilationResult failedResult:
+                {
+                    string errors = string.Join(Environment.NewLine, failedResult.Errors);
+                    await DisplayAlertAsync("Compile Graph", errors, "OK");
+                    break;
+                }
+        }
     }
 
     private async void OnSaveGraphClicked(object sender, EventArgs e)

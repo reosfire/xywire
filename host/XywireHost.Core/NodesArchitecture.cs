@@ -24,6 +24,7 @@ public interface IEffectNodeInstance
     IReadOnlyDictionary<string, IUntypedInputHandle> Inputs { get; }
     IReadOnlyDictionary<string, IUntypedOutputSlot> Outputs { get; }
     void Initialize(IEffectContext context);
+    void Cleanup();
 }
 
 public class EffectContext : IEffectContext
@@ -46,6 +47,10 @@ public abstract class BaseEffect : IDataSink, IDataSource, IEffectNodeInstance
     public IReadOnlyDictionary<string, IUntypedOutputSlot> Outputs => _outputs.Entries;
 
     public virtual void Initialize(IEffectContext context)
+    {
+    }
+    
+    public virtual void Cleanup()
     {
     }
 
@@ -245,12 +250,15 @@ public class TaskHandle
 
 public class Scheduler
 {
+    private readonly List<TaskHandle> _tasks = [];
+    
     public TaskHandle ScheduleTask(Action taskAction, int fps)
     {
         ArgumentNullException.ThrowIfNull(taskAction);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(fps);
 
         TaskHandle handle = new();
+        _tasks.Add(handle);
 
         handle.Thread = new Thread(() =>
         {
@@ -258,7 +266,17 @@ public class Scheduler
         }) { IsBackground = true };
 
         handle.Thread.Start();
+        
         return handle;
+    }
+    
+    public void StopAll()
+    {
+        foreach (TaskHandle handle in _tasks)
+        {
+            handle.Stop();
+        }
+        _tasks.Clear();
     }
 
     private void FpsStableLoop(Action taskAction, int fps, TaskHandle handle)

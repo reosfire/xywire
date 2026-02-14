@@ -140,17 +140,24 @@ public static class EffectNodeCatalog
     }
 }
 
-public sealed record EffectGraphCompilationResult(
-    IReadOnlyDictionary<int, IEffectNodeInstance> Instances,
-    IReadOnlyList<string> Errors
-)
+public interface IGraphCompilationResult
 {
-    public bool Success => Errors.Count == 0;
+    IReadOnlyList<string> Warnings { get; }
 }
+
+public sealed record SuccessfulGraphCompilationResult(
+    IReadOnlyDictionary<int, IEffectNodeInstance> Instances,
+    IReadOnlyList<string> Warnings
+) : IGraphCompilationResult;
+
+public sealed record FailedGraphCompilationResult(
+    IReadOnlyList<string> Errors,
+    IReadOnlyList<string> Warnings
+) : IGraphCompilationResult;
 
 public static class EffectGraphCompiler
 {
-    public static EffectGraphCompilationResult Compile(EffectGraphModel graph, IEffectContext context)
+    public static IGraphCompilationResult Compile(EffectGraphModel graph, IEffectContext context)
     {
         List<string> errors = [];
         Dictionary<int, IEffectNodeInstance> instances = new();
@@ -226,8 +233,13 @@ public static class EffectGraphCompiler
             outputSlot.SetSetValue(inputHandle.GetSetValue());
             inputHandle.IsConnected = true;
         }
+        
+        if (errors.Count > 0)
+        {
+            return new FailedGraphCompilationResult(errors, []);
+        }
 
-        // Invoke embedded inputs with provided values
+        // Bind outputs to embedded inputs
         foreach ((int nodeId, IEffectNodeInstance instance) in instances)
         {
             if (!nodeDataMap.TryGetValue(nodeId, out EffectGraphNode? node))
@@ -247,6 +259,6 @@ public static class EffectGraphCompiler
             instance.Initialize(context);
         }
 
-        return new EffectGraphCompilationResult(instances, errors);
+        return new SuccessfulGraphCompilationResult(instances, []);
     }
 }
