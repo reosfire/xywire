@@ -69,8 +69,8 @@ internal abstract class RaytracedEffect(LedLine attachedLedLine, int samplesPerP
                     (double offsetX, double offsetY) = _samplingKernel[sample];
 
                     // Map LED position to normalized screen coordinates [-1, 1]
-                    double screenX = ((x + offsetX) / width - 0.5) * 2.0;
-                    double screenY = ((y + offsetY) / height - 0.5) * 2.0;
+                    double screenX = ((x + offsetX + 0.5) / width - 0.5) * 2.0;
+                    double screenY = ((y + offsetY + 0.5) / height - 0.5) * 2.0;
 
                     // Render pixel - implemented by derived class
                     Color hitColor = RenderPixel(screenX, screenY);

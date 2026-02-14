@@ -37,6 +37,7 @@ public class EffectService
             // TODO: Need huge fixing to be usable
             new EffectInfo("Snake Game", line => new SnakeGame(line)),
             new EffectInfo("Julia Set Zoom", line => new JuliaSetZoom(line)),
+            new EffectInfo("Beating Heart", line => new BeatingHeart(line)),
             new EffectInfo("Tree", line => new Tree(line)),
             new EffectInfo("Beautiful bugged fft. 1D", line => new StraightBuggedBeautifulFurrier(line)),
             new EffectInfo("Beautiful bugged fft. MIC 1D", line => new StraightBuggedBeautifulFurrierMic(line)),
