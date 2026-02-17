@@ -18,6 +18,7 @@ public class EffectService
     {
         return
         [
+            new EffectInfo("Bad apple", line => new BadApple(line)),
             new EffectInfo("Dynamically loaded effect", line => new DynamicallyLoadedEffect(line)),
             new EffectInfo("Self Playing Snake", line => new SelfPlayingSnake(line)),
             new EffectInfo("Rotating Cube", line => new RotatingCube(line)),
