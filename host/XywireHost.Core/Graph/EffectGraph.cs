@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Runtime.Loader;
 using XywireHost.Core.core;
 
 namespace XywireHost.Core.Graph;
@@ -81,7 +82,17 @@ public static class EffectNodeCatalog
 
     static EffectNodeCatalog()
     {
-        LoadFromAssembly(Assembly.GetExecutingAssembly());
+        string folderPath = "plugins";
+        folderPath = Path.GetFullPath(folderPath);
+        if (!Directory.Exists(folderPath)) return;
+
+        foreach (string dllPath in Directory.EnumerateFiles(folderPath, "*.dll"))
+        {
+            AssemblyLoadContext alc = new(Path.GetFileNameWithoutExtension(dllPath), true);
+            Assembly assembly = alc.LoadFromAssemblyPath(dllPath);
+            
+            LoadFromAssembly(assembly);
+        }
     }
 
     public static IReadOnlyList<ConcreteEffectDescriptor> All => ConcreteDescriptors.Values.ToList();

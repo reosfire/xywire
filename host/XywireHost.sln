@@ -12,7 +12,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		.editorconfig = .editorconfig
 	EndProjectSection
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ExamplePlugin", "ExamplePlugin\ExamplePlugin.csproj", "{ED1141BF-3016-4047-9D73-5840659F7A18}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "XywireHost.StandardPlugin", "XywireHost.StandardPlugin\XywireHost.StandardPlugin.csproj", "{ED1141BF-3016-4047-9D73-5840659F7A18}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

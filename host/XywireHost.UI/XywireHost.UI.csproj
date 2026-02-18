@@ -63,6 +63,7 @@
 
     <ItemGroup>
         <ProjectReference Include="..\XywireHost.Core\XywireHost.Core.csproj"/>
+        <ProjectReference Include="..\XywireHost.StandardPlugin\XywireHost.StandardPlugin.csproj" />
     </ItemGroup>
 
 </Project>
