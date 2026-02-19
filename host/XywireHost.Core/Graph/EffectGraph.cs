@@ -79,21 +79,7 @@ public static class EffectNodeCatalog
 
     private static readonly Dictionary<string, ConcreteEffectDescriptor> ConcreteDescriptors = new();
     private static readonly List<GenericEffectDescriptor> GenericDescriptors = [];
-
-    static EffectNodeCatalog()
-    {
-        string folderPath = "plugins";
-        folderPath = Path.GetFullPath(folderPath);
-        if (!Directory.Exists(folderPath)) return;
-
-        foreach (string dllPath in Directory.EnumerateFiles(folderPath, "*.dll"))
-        {
-            AssemblyLoadContext alc = new(Path.GetFileNameWithoutExtension(dllPath), true);
-            Assembly assembly = alc.LoadFromAssemblyPath(dllPath);
-            
-            LoadFromAssembly(assembly);
-        }
-    }
+    private static readonly HashSet<string> LoadedAssemblyPaths = [];
 
     public static IReadOnlyList<ConcreteEffectDescriptor> All => ConcreteDescriptors.Values.ToList();
     public static IReadOnlyList<GenericEffectDescriptor> AllGeneric => GenericDescriptors;
@@ -104,6 +90,64 @@ public static class EffectNodeCatalog
     public static void RegisterConcreteDescriptor(ConcreteEffectDescriptor descriptor)
     {
         ConcreteDescriptors[descriptor.TypeId] = descriptor;
+    }
+
+    public static void LoadPluginsFromPaths(IEnumerable<string> pluginPaths)
+    {
+        foreach (string pluginPath in pluginPaths)
+        {
+            LoadPluginsFromPath(pluginPath);
+        }
+    }
+
+    private static void LoadPluginsFromPath(string path)
+    {
+        try
+        {
+            if (File.Exists(path) && path.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+            {
+                LoadPluginAssembly(path);
+            }
+            else if (Directory.Exists(path))
+            {
+                foreach (string dllPath in Directory.EnumerateFiles(path, "*.dll"))
+                {
+                    LoadPluginAssembly(dllPath);
+                }
+            }
+        }
+        catch
+        {
+            // Silently ignore errors loading individual plugins
+        }
+    }
+
+    private static void LoadPluginAssembly(string dllPath)
+    {
+        try
+        {
+            string fullPath = Path.GetFullPath(dllPath);
+            
+            if (LoadedAssemblyPaths.Contains(fullPath))
+                return;
+
+            AssemblyLoadContext alc = new(Path.GetFileNameWithoutExtension(dllPath), true);
+            Assembly assembly = alc.LoadFromAssemblyPath(fullPath);
+            
+            LoadFromAssembly(assembly);
+            LoadedAssemblyPaths.Add(fullPath);
+        }
+        catch
+        {
+            // Silently ignore errors loading individual assemblies
+        }
+    }
+
+    public static void ClearPlugins()
+    {
+        ConcreteDescriptors.Clear();
+        GenericDescriptors.Clear();
+        LoadedAssemblyPaths.Clear();
     }
 
     private static void LoadFromAssembly(Assembly assembly)

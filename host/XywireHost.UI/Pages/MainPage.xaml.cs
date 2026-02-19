@@ -72,6 +72,12 @@ public partial class MainPage : ContentPage
         }
     }
 
+    private async void OnPluginSettingsClicked(object sender, EventArgs e)
+    {
+        PluginSettingsPage page = _serviceProvider.GetRequiredService<PluginSettingsPage>();
+        await Navigation.PushAsync(page);
+    }
+
     private void UpdateStatus()
     {
         StatusLabel.Text = _effectService.IsConnected ? "Connected to device" : "Not connected";

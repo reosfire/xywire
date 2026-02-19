@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="XywireHost.UI.Pages.PluginSettingsPage"
+             Title="Plugin Settings">
+
+    <ScrollView>
+        <VerticalStackLayout
+            Spacing="20"
+            Padding="30">
+
+            <Label
+                Text="Plugin Paths"
+                FontSize="24"
+                FontAttributes="Bold"
+                HorizontalOptions="Center"
+                Margin="0,0,0,10" />
+
+            <Label
+                Text="Manage paths to plugin DLL files or folders containing plugins."
+                FontSize="14"
+                HorizontalTextAlignment="Center"
+                Margin="0,0,0,20" />
+
+            <HorizontalStackLayout
+                Spacing="10"
+                HorizontalOptions="Center">
+                <Label
+                    Text="Loaded Plugins:"
+                    FontSize="16"
+                    FontAttributes="Bold" />
+                <Label
+                    x:Name="PluginCountLabel"
+                    Text="0"
+                    FontSize="16" />
+            </HorizontalStackLayout>
+
+            <Button
+                x:Name="AddFolderButton"
+                Text="Add Plugin Folder"
+                Clicked="OnAddFolderClicked"
+                HorizontalOptions="Fill"
+                Margin="0,10,0,0" />
+
+            <Button
+                x:Name="AddFileButton"
+                Text="Add Plugin File"
+                Clicked="OnAddFileClicked"
+                HorizontalOptions="Fill"
+                Margin="0,5,0,0" />
+
+            <Button
+                x:Name="ReloadButton"
+                Text="Reload Plugins"
+                Clicked="OnReloadPluginsClicked"
+                HorizontalOptions="Fill"
+                Margin="0,5,0,0" />
+
+            <Label
+                Text="Configured Plugin Paths:"
+                FontSize="18"
+                FontAttributes="Bold"
+                Margin="0,20,0,10" />
+
+            <CollectionView
+                x:Name="PluginPathsCollectionView"
+                SelectionMode="None">
+                <CollectionView.ItemTemplate>
+                    <DataTemplate>
+                        <SwipeView>
+                            <SwipeView.RightItems>
+                                <SwipeItems>
+                                    <SwipeItem
+                                        Text="Delete"
+                                        BackgroundColor="Red"
+                                        Clicked="OnDeletePluginPath" />
+                                </SwipeItems>
+                            </SwipeView.RightItems>
+                            <Border
+                                Padding="10"
+                                Margin="0,5"
+                                Stroke="Gray"
+                                StrokeThickness="1">
+                                <Border.StrokeShape>
+                                    <RoundRectangle CornerRadius="5" />
+                                </Border.StrokeShape>
+                                <Label
+                                    Text="{Binding}"
+                                    FontSize="14"
+                                    LineBreakMode="TailTruncation" />
+                            </Border>
+                        </SwipeView>
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
+
+            <Label
+                x:Name="NoPathsLabel"
+                Text="No plugin paths configured. Add a folder or file to get started."
+                FontSize="14"
+                HorizontalTextAlignment="Center"
+                TextColor="Gray"
+                IsVisible="True"
+                Margin="0,20,0,0" />
+
+        </VerticalStackLayout>
+    </ScrollView>
+
+</ContentPage>
