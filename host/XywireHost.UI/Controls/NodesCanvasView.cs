@@ -52,7 +52,7 @@ public sealed class NodesCanvasView : SKCanvasView
     }
 
     private int _currentNodeId = 0;
-    public Dictionary<int, INodeInstance> Nodes { get; } = [];
+    public OrderedDictionary<int, INodeInstance> Nodes { get; } = new();
 
     public int? SelectedNodeId { get; private set; }
 
@@ -196,10 +196,20 @@ public sealed class NodesCanvasView : SKCanvasView
             return;
         SelectedNodeId = nodeId;
 
-        if (nodeId == null) return;
-
-        INodeInstance? selectedNode = Nodes.GetValueOrDefault(nodeId.Value);
-        SelectionChanged?.Invoke(this, new NodeSelectionChangedEventArgs(selectedNode));
+        if (nodeId == null)
+        {
+            SelectionChanged?.Invoke(this, new NodeSelectionChangedEventArgs(null));
+        }
+        else
+        {
+            INodeInstance selectedNode = Nodes[nodeId.Value];
+            
+            Nodes.Remove(nodeId.Value);
+            Nodes[nodeId.Value] = selectedNode;
+            
+            SelectionChanged?.Invoke(this, new NodeSelectionChangedEventArgs(selectedNode));
+        }
+        
         InvalidateSurface();
     }
 
@@ -213,9 +223,10 @@ public sealed class NodesCanvasView : SKCanvasView
         }
 
         SKRect? bounds = null;
+        int order = 0;
         foreach (INodeInstance node in Nodes.Values)
         {
-            SKRect nodeBounds = BuildLayout(node).Bounds;
+            SKRect nodeBounds = BuildLayout(node, order++).Bounds;
             bounds = bounds.HasValue ? SKRect.Union(bounds.Value, nodeBounds) : nodeBounds;
         }
 
@@ -251,27 +262,79 @@ public sealed class NodesCanvasView : SKCanvasView
 
         _layouts.Clear();
 
+        int order = 0;
         foreach (INodeInstance node in Nodes.Values)
         {
-            NodeLayout layout = BuildLayout(node);
+            NodeLayout layout = BuildLayout(node, order++);
             _layouts[node.Id] = layout;
+        }
+        
+        foreach ((int nodeId, INodeInstance node) in Nodes)
+        {
+            NodeLayout currentLayout = _layouts[nodeId];
+            
+            foreach ((string outputPortId, PortReference? connectedOutput) in node.Outputs)
+            {
+                if (connectedOutput is null) continue;
 
+                if (!_layouts.TryGetValue(connectedOutput.Value.NodeId, out NodeLayout? toLayout))
+                {
+                    continue;
+                }
+                
+                if (currentLayout.Order <= toLayout.Order) continue;
+
+                if (!currentLayout.OutputPorts.TryGetValue(outputPortId, out SKPoint start) ||
+                    !toLayout.InputPorts.TryGetValue(connectedOutput.Value.PortId, out SKPoint end))
+                {
+                    continue;
+                }
+                
+                start = new SKPoint(start.X + PortRadius, start.Y);
+                end = new SKPoint(end.X - PortRadius, end.Y);
+
+                DrawConnection(canvas, start, end);
+            }
+            
+            foreach ((string inputPortId, PortReference? connectedInput) in node.Inputs)
+            {
+                if (connectedInput is null) continue;
+
+                if (!_layouts.TryGetValue(connectedInput.Value.NodeId, out NodeLayout? toLayout))
+                {
+                    continue;
+                }
+                
+                if (currentLayout.Order <= toLayout.Order) continue;
+
+                if (!currentLayout.InputPorts.TryGetValue(inputPortId, out SKPoint start) ||
+                    !toLayout.OutputPorts.TryGetValue(connectedInput.Value.PortId, out SKPoint end))
+                {
+                    continue;
+                }
+                
+                start = new SKPoint(start.X - PortRadius, start.Y);
+                end = new SKPoint(end.X + PortRadius, end.Y);
+
+                DrawConnection(canvas, end, start);
+            }
+            
             bool isSelected = SelectedNodeId == node.Id;
             SKPaint fillPaint = isSelected ? _selectedNodePaint : _nodePaint;
 
-            canvas.DrawRoundRect(layout.Bounds, 8, 8, fillPaint);
-            canvas.DrawRoundRect(layout.Bounds, 8, 8, _nodeStrokePaint);
+            canvas.DrawRoundRect(currentLayout.Bounds, 8, 8, fillPaint);
+            canvas.DrawRoundRect(currentLayout.Bounds, 8, 8, _nodeStrokePaint);
 
-            float titleBaseline = layout.Bounds.Top + NodePadding + HeaderHeight;
-            canvas.DrawText(node.Title, layout.Bounds.Left + NodePadding, titleBaseline, _titlePaint);
-
-            foreach ((string portName, SKPoint position) in layout.InputPorts)
+            float titleBaseline = currentLayout.Bounds.Top + NodePadding + HeaderHeight;
+            canvas.DrawText(node.Title, currentLayout.Bounds.Left + NodePadding, titleBaseline, _titlePaint);
+            
+            foreach ((string portName, SKPoint position) in currentLayout.InputPorts)
             {
                 DrawPort(canvas, position);
                 canvas.DrawText(portName, position.X + 10f, position.Y + 5f, _textPaint);
             }
 
-            foreach ((string portName, SKPoint position) in layout.OutputPorts)
+            foreach ((string portName, SKPoint position) in currentLayout.OutputPorts)
             {
                 DrawPort(canvas, position);
                 float textWidth = _textPaint.MeasureText(portName);
@@ -279,36 +342,21 @@ public sealed class NodesCanvasView : SKCanvasView
             }
         }
 
-        foreach ((int nodeId, INodeInstance node) in Nodes)
-        {
-            foreach ((string outputPortId, PortReference? connectedOutput) in node.Outputs)
-            {
-                if (connectedOutput is null) continue;
-
-                if (!_layouts.TryGetValue(nodeId, out NodeLayout? fromLayout) ||
-                    !_layouts.TryGetValue(connectedOutput.Value.NodeId, out NodeLayout? toLayout))
-                {
-                    continue;
-                }
-
-                if (!fromLayout.OutputPorts.TryGetValue(outputPortId, out SKPoint start) ||
-                    !toLayout.InputPorts.TryGetValue(connectedOutput.Value.PortId, out SKPoint end))
-                {
-                    continue;
-                }
-
-                DrawConnection(canvas, start, end);
-            }
-        }
-
         if (_currentDragState is ConnectionDragState drag &&
             TryGetPortPosition(drag.StartPort, out SKPoint startPosition))
         {
+            startPosition = drag.StartPort.Type switch
+            {
+                PortType.Output => new SKPoint(startPosition.X + PortRadius, startPosition.Y),
+                PortType.Input => new SKPoint(startPosition.X - PortRadius, startPosition.Y),
+                _ => throw new InvalidOperationException("Invalid port type"),
+            };
+
             DrawConnection(canvas, startPosition, drag.CurrentWorld);
         }
     }
 
-    private NodeLayout BuildLayout(INodeInstance node)
+    private NodeLayout BuildLayout(INodeInstance node, int order)
     {
         float titleWidth = _titlePaint.MeasureText(node.Title);
         float maxInputWidth = node.Inputs.Count == 0 ? 0f : node.Inputs.Max(input => _textPaint.MeasureText(input.Key));
@@ -330,18 +378,18 @@ public sealed class NodesCanvasView : SKCanvasView
         float y = bounds.Top + NodePadding + HeaderHeight + LineHeight / 2f;
         foreach (string port in node.Inputs.Keys)
         {
-            inputPorts[port] = new SKPoint(bounds.Left + NodePadding, y);
+            inputPorts[port] = new SKPoint(bounds.Left, y);
             y += LineHeight;
         }
 
         y = bounds.Top + NodePadding + HeaderHeight + LineHeight / 2f;
         foreach (string port in node.Outputs.Keys)
         {
-            outputPorts[port] = new SKPoint(bounds.Right - NodePadding, y);
+            outputPorts[port] = new SKPoint(bounds.Right, y);
             y += LineHeight;
         }
 
-        return new NodeLayout(bounds, inputPorts, outputPorts);
+        return new NodeLayout(bounds, order, inputPorts, outputPorts);
     }
 
     private void DrawPort(SKCanvas canvas, SKPoint position) => canvas.DrawCircle(position, PortRadius, _portPaint);
@@ -448,44 +496,49 @@ public sealed class NodesCanvasView : SKCanvasView
 
     private bool TryHitNode(SKPoint location, out int nodeId, out SKPoint nodeOrigin)
     {
-        foreach ((int id, NodeLayout layout) in _layouts)
-        {
-            if (layout.Bounds.Contains(location))
-            {
-                nodeId = id;
-                nodeOrigin = new SKPoint(layout.Bounds.Left, layout.Bounds.Top);
-                return true;
-            }
-        }
-
+        int hightestOrder = -1;
         nodeId = -1;
         nodeOrigin = default;
-        return false;
+        
+        foreach ((int id, NodeLayout layout) in _layouts)
+        {
+            if (!layout.Bounds.Contains(location)) continue;
+            if (layout.Order <= hightestOrder) continue;
+            
+            hightestOrder = layout.Order;
+            nodeId = id;
+            nodeOrigin = new SKPoint(layout.Bounds.Left, layout.Bounds.Top);
+        }
+        
+        return hightestOrder != -1;
     }
 
     private bool TryHitPort(SKPoint location, out PortReference port)
     {
+        int hightestOrder = -1;
+        port = default;
         foreach ((int id, NodeLayout layout) in _layouts)
         {
             foreach ((string portName, SKPoint position) in layout.InputPorts)
             {
                 if (!IsNear(location, position)) continue;
+                if (layout.Order <= hightestOrder) continue;
 
+                hightestOrder = layout.Order;
                 port = new PortReference(id, portName, PortType.Input);
-                return true;
             }
 
             foreach ((string portName, SKPoint position) in layout.OutputPorts)
             {
                 if (!IsNear(location, position)) continue;
+                if (layout.Order <= hightestOrder) continue;
 
+                hightestOrder = layout.Order;
                 port = new PortReference(id, portName, PortType.Output);
-                return true;
             }
         }
-
-        port = default;
-        return false;
+        
+        return hightestOrder != -1;
     }
 
     private void ToggleConnection(PortReference a, PortReference b)
@@ -538,6 +591,7 @@ public sealed class NodesCanvasView : SKCanvasView
 
     private sealed record NodeLayout(
         SKRect Bounds,
+        int Order,
         Dictionary<string, SKPoint> InputPorts,
         Dictionary<string, SKPoint> OutputPorts
     );
